@@ -1,4 +1,4 @@
-name: Notion IGDb Single Page Sync
+name: Notion IGDb Sync Last Page
 
 on:
   schedule:
@@ -30,7 +30,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         
-    - name: Run Notion IGDb Single Page Sync
+    - name: Run Notion IGDb Sync Last Page
       env:
         NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
         IGDB_CLIENT_ID: ${{ secrets.IGDB_CLIENT_ID }}
@@ -44,6 +44,6 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v3
       with:
-        name: single-page-sync-logs-${{ github.run_number }}
+        name: sync-last-page-logs-${{ github.run_number }}
         path: notion_igdb_sync.log
         retention-days: 3

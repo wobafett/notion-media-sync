@@ -233,7 +233,7 @@ This project includes two automated workflows:
 - **Manual**: On-demand with custom options
 - **Features**: Syncs all pages, configurable workers, force modes
 
-### Single Page Sync Workflow  
+### Sync Last Page Workflow  
 - **Schedule**: Every 30 minutes
 - **Manual**: On-demand for quick updates
 - **Features**: Ultra-fast single page processing, perfect for iOS shortcuts

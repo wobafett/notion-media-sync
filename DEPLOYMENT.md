@@ -42,7 +42,7 @@ Add these secrets to your GitHub repository (`Settings > Secrets and variables >
 - `force_icons`: Force update all page icons
 - `workers`: Number of parallel workers (default: 3)
 
-#### 2. Single Page Sync (`single-page-sync.yml`)
+#### 2. Sync Last Page (`sync_last_page.yml`)
 
 **Triggers:**
 - **Scheduled**: Every 30 minutes automatically
@@ -72,7 +72,7 @@ Add these secrets to your GitHub repository (`Settings > Secrets and variables >
    - Both workflows should be visible and ready to run
 
 4. **Test Manual Run**
-   - Click on "Notion IGDb Single Page Sync"
+   - Click on "Notion IGDb Sync Last Page"
    - Click "Run workflow"
    - Verify it completes successfully
 
