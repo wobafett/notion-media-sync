@@ -270,3 +270,4 @@ If you encounter issues:
 ---
 
 **Happy gaming! 🎮**
+# Notion-IGDB-Sync
