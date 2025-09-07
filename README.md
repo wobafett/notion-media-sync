@@ -237,6 +237,7 @@ This project includes two automated workflows:
 - **Schedule**: Every 30 minutes
 - **Manual**: On-demand for quick updates
 - **Features**: Ultra-fast single page processing, perfect for iOS shortcuts
+- **iOS Integration**: See [iOS_SHORTCUT_SETUP.md](iOS_SHORTCUT_SETUP.md) for iPhone/iPad setup
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for complete setup instructions.
 
