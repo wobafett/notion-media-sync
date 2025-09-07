@@ -1,4 +1,4 @@
-name: Notion IGDb Sync Last Page
+name: Sync Last Page
 
 on:
   schedule:
@@ -30,7 +30,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         
-    - name: Run Notion IGDb Sync Last Page
+    - name: Run Sync Last Page
       env:
         NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
         IGDB_CLIENT_ID: ${{ secrets.IGDB_CLIENT_ID }}

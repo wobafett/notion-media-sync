@@ -228,7 +228,7 @@ LOG_LEVEL=DEBUG
 
 This project includes two automated workflows:
 
-### Full Sync Workflow
+### Notion IGDb Sync Workflow
 - **Schedule**: Every 6 hours
 - **Manual**: On-demand with custom options
 - **Features**: Syncs all pages, configurable workers, force modes

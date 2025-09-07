@@ -25,7 +25,7 @@ Add these secrets to your GitHub repository (`Settings > Secrets and variables >
 
 ### ⚙️ Workflows
 
-#### 1. Full Sync (`full-sync.yml`)
+#### 1. Notion IGDb Sync (`full-sync.yml`)
 
 **Triggers:**
 - **Scheduled**: Every 6 hours automatically
@@ -72,7 +72,7 @@ Add these secrets to your GitHub repository (`Settings > Secrets and variables >
    - Both workflows should be visible and ready to run
 
 4. **Test Manual Run**
-   - Click on "Notion IGDb Sync Last Page"
+   - Click on "Sync Last Page"
    - Click "Run workflow"
    - Verify it completes successfully
 
