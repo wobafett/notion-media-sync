@@ -1,0 +1,62 @@
+name: Notion IGDb Full Sync
+
+on:
+  schedule:
+    # Run every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      force_all:
+        description: 'Force update all pages (including completed content)'
+        required: false
+        default: false
+        type: boolean
+      force_icons:
+        description: 'Force update all page icons'
+        required: false
+        default: false
+        type: boolean
+      workers:
+        description: 'Number of parallel workers (1-4)'
+        required: false
+        default: 3
+        type: number
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Run Notion IGDb Full Sync
+      env:
+        NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        IGDB_CLIENT_ID: ${{ secrets.IGDB_CLIENT_ID }}
+        IGDB_CLIENT_SECRET: ${{ secrets.IGDB_CLIENT_SECRET }}
+        NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+        LOG_LEVEL: INFO
+      run: |
+        python notion_igdb_sync.py \
+          ${{ github.event.inputs.force_all && '--force-all' || '' }} \
+          ${{ github.event.inputs.force_icons && '--force-icons' || '' }} \
+          --workers ${{ github.event.inputs.workers || 3 }}
+          
+    - name: Upload logs
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: sync-logs-${{ github.run_number }}
+        path: notion_igdb_sync.log
+        retention-days: 7
