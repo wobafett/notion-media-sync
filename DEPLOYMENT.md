@@ -25,7 +25,7 @@ Add these secrets to your GitHub repository (`Settings > Secrets and variables >
 
 ### ⚙️ Workflows
 
-#### 1. Notion IGDb Sync (`full-sync.yml`)
+#### 1. Notion IGDb Sync (`notion_igdb_sync.yml`)
 
 **Triggers:**
 - **Scheduled**: Every 6 hours automatically
