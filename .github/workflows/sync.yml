@@ -1,0 +1,84 @@
+name: Notion IGDb Sync
+
+on:
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      sync_mode:
+        description: 'Sync mode'
+        required: true
+        default: 'last-page'
+        type: choice
+        options:
+          - 'last-page'
+          - 'all-pages'
+          - 'force-all'
+      workers:
+        description: 'Number of parallel workers (1-4)'
+        required: false
+        default: '3'
+        type: string
+  # Schedule runs (optional - uncomment if you want automatic syncing)
+  # schedule:
+  #   - cron: '0 */6 * * *'  # Every 6 hours
+  
+  # Trigger on push to main branch (optional)
+  push:
+    branches:
+      - main
+    paths:
+      - 'notion_igdb_sync.py'
+      - 'sync_last_page.py'
+      - 'property_config.py'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Set up environment variables
+      run: |
+        echo "NOTION_TOKEN=${{ secrets.NOTION_TOKEN }}" >> $GITHUB_ENV
+        echo "IGDB_CLIENT_ID=${{ secrets.IGDB_CLIENT_ID }}" >> $GITHUB_ENV
+        echo "IGDB_CLIENT_SECRET=${{ secrets.IGDB_CLIENT_SECRET }}" >> $GITHUB_ENV
+        echo "NOTION_DATABASE_ID=${{ secrets.NOTION_DATABASE_ID }}" >> $GITHUB_ENV
+        echo "LOG_LEVEL=INFO" >> $GITHUB_ENV
+        
+    - name: Run Last Page Sync
+      if: github.event.inputs.sync_mode == 'last-page' || (github.event_name == 'push' && github.event.inputs.sync_mode == '')
+      run: |
+        echo "🎮 Running last page sync..."
+        python sync_last_page.py
+        
+    - name: Run All Pages Sync
+      if: github.event.inputs.sync_mode == 'all-pages'
+      run: |
+        echo "🎮 Running all pages sync..."
+        python notion_igdb_sync.py --workers ${{ github.event.inputs.workers || '3' }}
+        
+    - name: Run Force All Pages Sync
+      if: github.event.inputs.sync_mode == 'force-all'
+      run: |
+        echo "🎮 Running force all pages sync..."
+        python notion_igdb_sync.py --force-all --workers ${{ github.event.inputs.workers || '3' }}
+        
+    - name: Upload logs
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: sync-logs
+        path: notion_igdb_sync.log
+        retention-days: 7
