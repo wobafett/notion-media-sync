@@ -3,7 +3,7 @@ name: Sync Last Page
 on:
   schedule:
     # Run every 30 minutes for quick updates
-    - cron: '*/30 * * * *'
+   # - cron: '*/30 * * * *'
   workflow_dispatch:
     inputs:
       force_update:
