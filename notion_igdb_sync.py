@@ -1218,6 +1218,21 @@ class NotionIGDbSync:
             # Format properties for Notion
             properties = self.format_notion_properties(game_data)
             
+            # Check if there are actual changes before updating
+            has_changes = self._has_property_changes(page, properties)
+            
+            if not has_changes:
+                logger.info(f"No changes detected for: {title} - skipping update")
+                return None  # Return None to indicate skipped
+            
+            # Add last_updated timestamp since we have changes
+            if self.property_mapping['last_updated_property_id']:
+                property_key = self._get_property_key(self.property_mapping['last_updated_property_id'])
+                if property_key:
+                    properties[property_key] = {
+                        'date': {'start': datetime.now().isoformat()}
+                    }
+            
             # Get cover URL if available
             cover_url = None
             if game_data.get('cover'):
@@ -1313,14 +1328,6 @@ class NotionIGDbSync:
                             'number': playtime_hours
                         }
             
-            
-            # Last Updated
-            if self.property_mapping['last_updated_property_id']:
-                property_key = self._get_property_key(self.property_mapping['last_updated_property_id'])
-                if property_key:
-                    properties[property_key] = {
-                        'date': {'start': datetime.now().isoformat()}
-                    }
             
             # Extended properties
             self._format_extended_properties(game_data, properties)
@@ -1677,7 +1684,98 @@ class NotionIGDbSync:
             logger.debug(f"Error checking if page is up to date: {e}")
             return False
     
-    def run_sync(self, force_icons: bool = False, force_all: bool = False, max_workers: int = 3) -> Dict:
+    def _has_property_changes(self, page: Dict, new_properties: Dict) -> bool:
+        """Check if there are actual changes between current page properties and new properties."""
+        try:
+            current_properties = page.get('properties', {})
+            changes_detected = []
+            
+            # Compare each new property with current page properties
+            for prop_key, new_value in new_properties.items():
+                current_value = current_properties.get(prop_key, {})
+                
+                # Skip last_updated property as it's handled separately
+                if prop_key == self._get_property_key(self.property_mapping.get('last_updated_property_id', '')):
+                    continue
+                
+                # Compare different property types
+                if new_value.get('type') == 'rich_text':
+                    current_text = current_value.get('rich_text', [{}])[0].get('text', {}).get('content', '')
+                    new_text = new_value.get('rich_text', [{}])[0].get('text', {}).get('content', '')
+                    if current_text != new_text:
+                        changes_detected.append(f"{prop_key}: text changed")
+                        
+                elif new_value.get('type') == 'date':
+                    current_date = current_value.get('date', {}).get('start', '')
+                    new_date = new_value.get('date', {}).get('start', '')
+                    if current_date != new_date:
+                        changes_detected.append(f"{prop_key}: date changed")
+                        
+                elif new_value.get('type') == 'number':
+                    current_num = current_value.get('number')
+                    new_num = new_value.get('number')
+                    if current_num != new_num:
+                        changes_detected.append(f"{prop_key}: number changed")
+                        
+                elif new_value.get('type') == 'multi_select':
+                    current_options = set(item.get('name', '') for item in current_value.get('multi_select', []))
+                    new_options = set(item.get('name', '') for item in new_value.get('multi_select', []))
+                    if current_options != new_options:
+                        changes_detected.append(f"{prop_key}: multi_select changed")
+                        
+                elif new_value.get('type') == 'status':
+                    current_status = current_value.get('status', {}).get('name', '')
+                    new_status = new_value.get('status', {}).get('name', '')
+                    if current_status != new_status:
+                        changes_detected.append(f"{prop_key}: status changed")
+                        
+                elif new_value.get('type') == 'url':
+                    current_url = current_value.get('url', '')
+                    new_url = new_value.get('url', '')
+                    if current_url != new_url:
+                        changes_detected.append(f"{prop_key}: url changed")
+                        
+                elif new_value.get('type') == 'title':
+                    current_title = current_value.get('title', [{}])[0].get('text', {}).get('content', '')
+                    new_title = new_value.get('title', [{}])[0].get('text', {}).get('content', '')
+                    if current_title != new_title:
+                        changes_detected.append(f"{prop_key}: title changed")
+                
+                # Handle properties without explicit type (like number properties with ID)
+                elif 'number' in new_value:
+                    current_num = current_value.get('number')
+                    new_num = new_value.get('number')
+                    if current_num != new_num:
+                        changes_detected.append(f"{prop_key}: number changed")
+            
+            # Check if any properties exist in current page but not in new properties
+            for prop_key, current_value in current_properties.items():
+                if prop_key not in new_properties:
+                    # Skip if this is a property we don't manage
+                    if prop_key in [self._get_property_key(self.property_mapping.get('last_updated_property_id', ''))]:
+                        continue
+                    # Check if current property has meaningful content
+                    if (current_value.get('rich_text') or 
+                        current_value.get('multi_select') or 
+                        current_value.get('number') or 
+                        current_value.get('date') or 
+                        current_value.get('status') or 
+                        current_value.get('url')):
+                        changes_detected.append(f"{prop_key}: property removed")
+            
+            if changes_detected:
+                logger.info(f"Changes detected: {', '.join(changes_detected)}")
+                return True
+            else:
+                logger.info("No changes detected - skipping update")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error checking for property changes: {e}")
+            # If we can't determine changes, assume there are changes to be safe
+            return True
+    
+    def run_sync(self, force_icons: bool = False, force_all: bool = False, max_workers: int = 3, last_page: bool = False) -> Dict:
         """Run the complete synchronization process."""
         logger.info("Starting Notion-IGDb synchronization")
         logger.info(f"Using {max_workers} parallel workers for processing")
@@ -1693,6 +1791,14 @@ class NotionIGDbSync:
         if not pages:
             logger.warning("No pages found in database")
             return {'success': False, 'message': 'No pages found'}
+        
+        # Handle last-page mode
+        if last_page:
+            logger.info("🎮 Last-page mode: Processing only the most recently edited page")
+            # Sort by last_edited_time (most recent first)
+            pages.sort(key=lambda page: page.get('last_edited_time', ''), reverse=True)
+            pages = pages[:1]  # Take only the first (most recent) page
+            logger.info(f"Selected page: {pages[0].get('id')}")
         
         logger.info(f"Found {len(pages)} pages to process")
         
@@ -1796,6 +1902,8 @@ def main():
                            help='Process all pages including completed content (overrides skip optimization)')
         parser.add_argument('--workers', type=int, default=3, metavar='N',
                            help='Number of parallel workers (default: 3, max recommended: 4)')
+        parser.add_argument('--last-page', action='store_true',
+                           help='Sync only the most recently edited page')
         args = parser.parse_args()
         
         # Validate workers parameter
@@ -1820,7 +1928,7 @@ def main():
         # Create sync instance and run
         sync = NotionIGDbSync(notion_token, igdb_client_id, igdb_client_secret, database_id)
         
-        result = sync.run_sync(force_icons=args.force_icons, force_all=args.force_all, max_workers=args.workers)
+        result = sync.run_sync(force_icons=args.force_icons, force_all=args.force_all, max_workers=args.workers, last_page=args.last_page)
         
         if result['success']:
             logger.info("Synchronization completed successfully")
