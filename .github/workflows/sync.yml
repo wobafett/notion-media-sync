@@ -4,15 +4,11 @@ on:
   # Manual trigger with options
   workflow_dispatch:
     inputs:
-      sync_mode:
-        description: 'Sync mode'
-        required: true
-        default: 'last-page'
-        type: choice
-        options:
-          - 'last-page'
-          - 'all-pages'
-          - 'force-all'
+      last_page_only:
+        description: 'Sync only the last edited page'
+        required: false
+        default: false
+        type: boolean
       workers:
         description: 'Number of parallel workers (1-4)'
         required: false
@@ -24,14 +20,12 @@ on:
         default: false
         type: boolean
   
-  # Schedule runs
+  # Scheduled runs - always full sync
   schedule:
-    # Run every 6 hours for all pages
+    # Run every 6 hours
     - cron: '0 */6 * * *'
-    # Run every 30 minutes for last page only
-    - cron: '*/30 * * * *'
   
-  # Trigger on push to main branch
+  # Trigger on push to main branch - always full sync
   push:
     branches:
       - main
@@ -58,67 +52,28 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         
-    - name: Determine sync mode
-      id: sync_mode
+    - name: Run Sync
+      env:
+        NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        IGDB_CLIENT_ID: ${{ secrets.IGDB_CLIENT_ID }}
+        IGDB_CLIENT_SECRET: ${{ secrets.IGDB_CLIENT_SECRET }}
+        NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+        LOG_LEVEL: INFO
       run: |
-        if [ "${{ github.event_name }}" = "schedule" ]; then
-          # For scheduled runs, use last-page for 30min schedule, all-pages for 6hr schedule
-          if [ "${{ github.event.schedule }}" = "*/30 * * * *" ]; then
-            echo "mode=last-page" >> $GITHUB_OUTPUT
-            echo "schedule_type=last-page" >> $GITHUB_OUTPUT
-          else
-            echo "mode=all-pages" >> $GITHUB_OUTPUT
-            echo "schedule_type=all-pages" >> $GITHUB_OUTPUT
-          fi
-        elif [ "${{ github.event_name }}" = "push" ]; then
-          echo "mode=last-page" >> $GITHUB_OUTPUT
-          echo "schedule_type=push" >> $GITHUB_OUTPUT
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.last_page_only }}" = "true" ]; then
+          echo "🎮 Running last page sync (manual trigger)..."
+          python notion_igdb_sync.py --last-page --workers ${{ github.event.inputs.workers || '3' }} \
+            ${{ github.event.inputs.force_icons && '--force-icons' || '' }}
         else
-          echo "mode=${{ github.event.inputs.sync_mode }}" >> $GITHUB_OUTPUT
-          echo "schedule_type=manual" >> $GITHUB_OUTPUT
+          echo "🎮 Running full sync (triggered by: ${{ github.event_name }})..."
+          python notion_igdb_sync.py --workers ${{ github.event.inputs.workers || '3' }} \
+            ${{ github.event.inputs.force_icons && '--force-icons' || '' }}
         fi
-        
-    - name: Run Last Page Sync
-      if: steps.sync_mode.outputs.mode == 'last-page'
-      env:
-        NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-        IGDB_CLIENT_ID: ${{ secrets.IGDB_CLIENT_ID }}
-        IGDB_CLIENT_SECRET: ${{ secrets.IGDB_CLIENT_SECRET }}
-        NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
-        LOG_LEVEL: INFO
-      run: |
-        echo "🎮 Running last page sync (triggered by: ${{ steps.sync_mode.outputs.schedule_type }})..."
-        python notion_igdb_sync.py --last-page --workers ${{ github.event.inputs.workers || '3' }}
-        
-    - name: Run All Pages Sync
-      if: steps.sync_mode.outputs.mode == 'all-pages'
-      env:
-        NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-        IGDB_CLIENT_ID: ${{ secrets.IGDB_CLIENT_ID }}
-        IGDB_CLIENT_SECRET: ${{ secrets.IGDB_CLIENT_SECRET }}
-        NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
-        LOG_LEVEL: INFO
-      run: |
-        echo "🎮 Running all pages sync (triggered by: ${{ steps.sync_mode.outputs.schedule_type }})..."
-        python notion_igdb_sync.py --workers ${{ github.event.inputs.workers || '3' }}
-        
-    - name: Run Force All Pages Sync
-      if: steps.sync_mode.outputs.mode == 'force-all'
-      env:
-        NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-        IGDB_CLIENT_ID: ${{ secrets.IGDB_CLIENT_ID }}
-        IGDB_CLIENT_SECRET: ${{ secrets.IGDB_CLIENT_SECRET }}
-        NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
-        LOG_LEVEL: INFO
-      run: |
-        echo "🎮 Running force all pages sync (triggered by: ${{ steps.sync_mode.outputs.schedule_type }})..."
-        python notion_igdb_sync.py --force-all --workers ${{ github.event.inputs.workers || '3' }} \
-          ${{ github.event.inputs.force_icons && '--force-icons' || '' }}
         
     - name: Upload logs
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: sync-logs-${{ github.run_number }}-${{ steps.sync_mode.outputs.mode }}
+        name: sync-logs-${{ github.run_number }}
         path: notion_igdb_sync.log
         retention-days: 7
