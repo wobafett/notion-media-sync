@@ -4,9 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: Which sync target to run
-        required: true
-        default: games
+        description: Optional sync target (required when page_id is empty)
+        required: false
         type: choice
         options:
           - games
@@ -123,6 +122,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [ -z "${{ inputs.target }}" ]; then
+            echo "target input is required when page_id is empty. Aborting."
+            exit 1
+          fi
+          if [ -z "${{ inputs.target }}" ]; then
+            echo "Error: target input is required when page_id is not provided."
+            exit 1
+          fi
           args=(--target "${{ inputs.target }}" --workers "${{ inputs.workers }}")
           if [ "${{ inputs.force_icons }}" = 'true' ]; then args+=('--force-icons'); fi
           if [ "${{ inputs.force_all }}" = 'true' ]; then args+=('--force-all'); fi

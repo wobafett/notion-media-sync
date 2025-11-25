@@ -103,6 +103,10 @@ def main(default_target: Optional[str] = None):
     args = parser.parse_args()
     args_target = getattr(args, "target", None)
 
+    if not args.page_id and not args_target and not default_target and not os.getenv("SYNC_TARGET"):
+        logger.error("--target (or SYNC_TARGET env) is required when page-id is not provided")
+        sys.exit(1)
+
     target_name = _resolve_target_name(args_target, default_target, targets)
     if target_name not in targets:
         logger.error("Unknown target '%s'. Valid options: %s", target_name, ", ".join(targets))
