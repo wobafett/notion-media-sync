@@ -2,7 +2,7 @@
 
 ## 🚀 GitHub Actions Deployment
 
-This project includes automated GitHub Actions workflows for seamless Notion-IGDb synchronization.
+This project includes a single automated GitHub Actions workflow for the unified Games / Music / Movies / Books sync.
 
 ### 📋 Prerequisites
 
@@ -18,48 +18,36 @@ Add these secrets to your GitHub repository (`Settings > Secrets and variables >
 
 | Secret Name | Description | Example |
 |-------------|-------------|---------|
-| `NOTION_TOKEN` | Notion integration token | `secret_abc123...` |
-| `IGDB_CLIENT_ID` | IGDb API client ID | `abc123def456` |
-| `IGDB_CLIENT_SECRET` | IGDb API client secret | `xyz789uvw012` |
-| `NOTION_DATABASE_ID` | Notion database ID | `2661404745bb80538779c22c298a186b` |
+| `NOTION_INTERNAL_INTEGRATION_SECRET` | Notion integration token | `ntn_abc123...` |
+| `NOTION_GAMES_DATABASE_ID` | Games DB ID | `2661404745bb80538779c22c298a186b` |
+| `NOTION_MOVIETV_DATABASE_ID` | Movies/TV DB ID | `2ab1404745bb81e9bb20e4b1930b6d0f` |
+| `NOTION_BOOKS_DATABASE_ID` | Books DB ID | `feedfacebeefdeadbead12345678` |
+| `NOTION_ARTISTS_DATABASE_ID` | Music Artists DB ID | `aaaabbbbccccddddeeeeffffffffffff` |
+| `NOTION_ALBUMS_DATABASE_ID` | Music Albums DB ID | `11112222333344445555666677778888` |
+| `NOTION_SONGS_DATABASE_ID` | Music Songs DB ID | `99990000aaaabbbbccccddddeeeeffff` |
+| `NOTION_LABELS_DATABASE_ID` | Music Labels DB ID | `abcd1234abcd1234abcd1234abcd1234` |
+| `IGDB_CLIENT_ID` / `IGDB_CLIENT_SECRET` | IGDb API credentials | |
+| `TMDB_API_KEY` | TMDb API key | |
+| `MUSICBRAINZ_USER_AGENT` | MusicBrainz app name + contact | `MyApp/1.0 (me@example.com)` |
+| `GOOGLE_BOOKS_API_KEY` | Google Books API key (optional) | |
+| `COMICVINE_API_KEY` | ComicVine API key (optional) | |
+| `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` | Optional Spotify enrichments | |
 
-### ⚙️ Workflows
+### ⚙️ Workflow Overview
 
-#### 1. Notion IGDb Sync (`notion_igdb_sync.yml`)
-
-**Triggers:**
-- **Scheduled**: Every 6 hours automatically
-- **Manual**: On-demand via GitHub Actions tab
-
-**Features:**
-- Syncs all pages in your Notion database
-- Configurable parallel workers (1-4)
-- Optional force update modes
-- Comprehensive logging
-
-**Manual Run Options:**
-- `force_all`: Update all pages including completed content
-- `force_icons`: Force update all page icons
-- `workers`: Number of parallel workers (default: 3)
-
-#### 2. Sync Last Page (`sync_last_page.yml`)
-
-**Triggers:**
-- **Scheduled**: Every 30 minutes automatically
-- **Manual**: On-demand via GitHub Actions tab
-
-**Features:**
-- Syncs only the most recently edited page
-- Ultra-fast processing (optimized for single page)
-- Perfect for iOS shortcuts integration
-- Minimal resource usage
+- **File**: `.github/workflows/notion-sync.yml`
+- **Dispatch inputs**: `target`, `page_id` (single-page webhook mode), `workers`, `database`, `created_after`, and booleans for `force_icons`, `force_all`, `force_update`, `force_research`, `force_scraping`, `dry_run`
+- **Schedule**: No active cron by default; a commented placeholder (`0 0 * * *`) lives inside the workflow so you can uncomment / duplicate when you’re ready for timed runs.
+- **Modes**:
+  - If `page_id` is provided, the job calls `python3 webhook.py` to auto-route the page’s database.
+  - Otherwise it runs `python3 main.py --target <games|music|movies|books>` with the provided flags.
 
 ### 🛠️ Setup Instructions
 
-1. **Fork/Clone Repository**
+1. **Create/Clone Repository**
    ```bash
-   git clone https://github.com/yourusername/notion-igdb-sync.git
-   cd notion-igdb-sync
+   git clone https://github.com/wobafett/notion-media-sync.git
+   cd notion-media-sync
    ```
 
 2. **Configure Secrets**
@@ -67,14 +55,12 @@ Add these secrets to your GitHub repository (`Settings > Secrets and variables >
    - Navigate to `Settings > Secrets and variables > Actions`
    - Add all required secrets listed above
 
-3. **Enable Workflows**
-   - Go to `Actions` tab in your repository
-   - Both workflows should be visible and ready to run
+3. **Enable Workflow**
+- Go to the `Actions` tab and enable workflows for the repository
 
 4. **Test Manual Run**
-   - Click on "Sync Last Page"
-   - Click "Run workflow"
-   - Verify it completes successfully
+- Click on "Notion Media Sync"
+- Choose a `target` (or provide `page_id`) and run the workflow
 
 ### 📊 Monitoring
 
@@ -91,11 +77,10 @@ Add these secrets to your GitHub repository (`Settings > Secrets and variables >
 ### 🔧 Customization
 
 **Schedule Changes:**
-Edit the `cron` expressions in the workflow files:
+Uncomment or duplicate the placeholder cron inside `.github/workflows/notion-sync.yml`:
 ```yaml
 schedule:
-  - cron: '0 */6 * * *'  # Every 6 hours
-  - cron: '*/30 * * * *' # Every 30 minutes
+  - cron: '0 0 * * *' # Example: run nightly at midnight UTC
 ```
 
 **Environment Variables:**
@@ -121,7 +106,7 @@ env:
    - Check IGDb API status
 
 3. **Database Not Found**
-   - Verify `NOTION_DATABASE_ID` is correct
+   - Verify `NOTION_GAMES_DATABASE_ID` / `NOTION_MOVIETV_DATABASE_ID` is correct
    - Ensure Notion integration has database access
    - Check database permissions
 
@@ -161,9 +146,9 @@ env:
 ## 🎯 Quick Start Checklist
 
 - [ ] Repository created and code pushed
-- [ ] All 4 GitHub secrets configured
-- [ ] First manual run successful
-- [ ] Scheduled runs enabled
-- [ ] Monitoring setup complete
+- [ ] Core GitHub secrets configured (`NOTION_INTERNAL_INTEGRATION_SECRET`, relevant `NOTION_*_DATABASE_ID`, API keys)
+- [ ] First manual workflow run successful
+- [ ] (Optional) Schedule enabled
+- [ ] Monitoring plan in place
 
 **Ready to sync!** 🎮✨

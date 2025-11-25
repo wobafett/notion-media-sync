@@ -6,8 +6,11 @@ This script helps you find the property IDs for your Notion database.
 
 import os
 import sys
-from notion_client import Client
+
 from dotenv import load_dotenv
+from notion_client import Client
+
+from shared.utils import get_database_id, get_notion_token
 
 # Load environment variables
 load_dotenv()
@@ -16,17 +19,22 @@ def find_property_ids():
     """Find and display property IDs for the Notion database."""
     
     # Get environment variables
-    notion_token = os.getenv('NOTION_TOKEN')
-    database_id = os.getenv('NOTION_DATABASE_ID')
+    notion_token = get_notion_token()
+    database_id = get_database_id(
+        'NOTION_GAMES_DATABASE_ID',
+        'NOTION_MOVIETV_DATABASE_ID',
+        'NOTION_BOOKS_DATABASE_ID',
+        'NOTION_DATABASE_ID',
+    )
     
     if not notion_token:
-        print("❌ NOTION_TOKEN not found in environment variables")
-        print("Please add NOTION_TOKEN to your .env file")
+        print("❌ NOTION_INTERNAL_INTEGRATION_SECRET (or NOTION_TOKEN) not found in environment variables")
+        print("Please add NOTION_INTERNAL_INTEGRATION_SECRET to your .env file")
         return False
     
     if not database_id:
-        print("❌ NOTION_DATABASE_ID not found in environment variables")
-        print("Please add NOTION_DATABASE_ID to your .env file")
+        print("❌ Notion database ID not found in environment variables.")
+        print("Please add NOTION_GAMES_DATABASE_ID, NOTION_MOVIETV_DATABASE_ID, or NOTION_DATABASE_ID to your .env file")
         return False
     
     try:

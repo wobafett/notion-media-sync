@@ -1,0 +1,133 @@
+name: Notion Media Sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which sync target to run
+        required: true
+        default: games
+        type: choice
+        options:
+          - games
+          - music
+          - movies
+          - books
+      page_id:
+        description: Optional Notion page ID for single-page mode (uses webhook router)
+        required: false
+        type: string
+      workers:
+        description: Worker threads for full syncs (games/movies/books)
+        required: false
+        default: "3"
+        type: number
+      database:
+        description: Music target database (artists, albums, songs, labels, locations)
+        required: false
+        type: string
+      created_after:
+        description: Music created-after filter (YYYY-MM-DD or 'today')
+        required: false
+        type: string
+      force_icons:
+        description: Force icon refresh
+        required: false
+        default: false
+        type: boolean
+      force_all:
+        description: Process completed pages
+        required: false
+        default: false
+        type: boolean
+      force_update:
+        description: Movies/Books – update even when already synced
+        required: false
+        default: false
+        type: boolean
+      force_research:
+        description: Books – re-run API lookups even with IDs
+        required: false
+        default: false
+        type: boolean
+      force_scraping:
+        description: Books – force ComicVine scraping
+        required: false
+        default: false
+        type: boolean
+      dry_run:
+        description: Books – log changes without writing to Notion
+        required: false
+        default: false
+        type: boolean
+  # schedule:
+  #   - cron: "0 0 * * *" # Placeholder – duplicate and customize per target as needed
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      NOTION_INTERNAL_INTEGRATION_SECRET: ${{ secrets.NOTION_INTERNAL_INTEGRATION_SECRET }}
+      NOTION_GAMES_DATABASE_ID: ${{ secrets.NOTION_GAMES_DATABASE_ID }}
+      NOTION_MOVIETV_DATABASE_ID: ${{ secrets.NOTION_MOVIETV_DATABASE_ID }}
+      NOTION_BOOKS_DATABASE_ID: ${{ secrets.NOTION_BOOKS_DATABASE_ID }}
+      NOTION_ARTISTS_DATABASE_ID: ${{ secrets.NOTION_ARTISTS_DATABASE_ID }}
+      NOTION_ALBUMS_DATABASE_ID: ${{ secrets.NOTION_ALBUMS_DATABASE_ID }}
+      NOTION_SONGS_DATABASE_ID: ${{ secrets.NOTION_SONGS_DATABASE_ID }}
+      NOTION_LABELS_DATABASE_ID: ${{ secrets.NOTION_LABELS_DATABASE_ID }}
+      NOTION_LOCATIONS_DATABASE_ID: ${{ secrets.NOTION_LOCATIONS_DATABASE_ID }}
+      IGDB_CLIENT_ID: ${{ secrets.IGDB_CLIENT_ID }}
+      IGDB_CLIENT_SECRET: ${{ secrets.IGDB_CLIENT_SECRET }}
+      TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+      GOOGLE_BOOKS_API_KEY: ${{ secrets.GOOGLE_BOOKS_API_KEY }}
+      COMICVINE_API_KEY: ${{ secrets.COMICVINE_API_KEY }}
+      JIKAN_API_KEY: ${{ secrets.JIKAN_API_KEY }}
+      STARWARS_FANDOM_API_KEY: ${{ secrets.STARWARS_FANDOM_API_KEY }}
+      MUSICBRAINZ_USER_AGENT: ${{ secrets.MUSICBRAINZ_USER_AGENT }}
+      SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+      SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+      LOG_LEVEL: INFO
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install --upgrade pip && pip install -r requirements.txt
+
+      - name: Run single-page sync (webhook router)
+        if: inputs.page_id != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "${{ inputs.force_icons }}" = 'true' ]; then args+=('--force-icons'); fi
+          if [ "${{ inputs.force_all }}" = 'true' ]; then args+=('--force-all'); fi
+          if [ "${{ inputs.force_update }}" = 'true' ]; then args+=('--force-update'); fi
+          if [ "${{ inputs.force_research }}" = 'true' ]; then args+=('--force-research'); fi
+          if [ "${{ inputs.force_scraping }}" = 'true' ]; then args+=('--force-scraping'); fi
+          if [ "${{ inputs.dry_run }}" = 'true' ]; then args+=('--dry-run'); fi
+          python3 webhook.py --page-id "${{ inputs.page_id }}" "${args[@]}"
+
+      - name: Run target sync
+        if: inputs.page_id == ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--target "${{ inputs.target }}" --workers "${{ inputs.workers }}")
+          if [ "${{ inputs.force_icons }}" = 'true' ]; then args+=('--force-icons'); fi
+          if [ "${{ inputs.force_all }}" = 'true' ]; then args+=('--force-all'); fi
+          if [ "${{ inputs.force_update }}" = 'true' ]; then args+=('--force-update'); fi
+          if [ -n "${{ inputs.database }}" ]; then args+=('--database' "${{ inputs.database }}"); fi
+          if [ -n "${{ inputs.created_after }}" ]; then args+=('--created-after' "${{ inputs.created_after }}"); fi
+          python3 main.py "${args[@]}"
+

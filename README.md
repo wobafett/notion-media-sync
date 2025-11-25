@@ -61,6 +61,25 @@ A Python script that synchronizes video game data from the Internet Game Databas
    python notion_igdb_sync.py
    ```
 
+## 🎛 Unified Entry Points
+
+This repository now hosts the combined sync logic for **Games**, **Music**, **Movies/TV**, and **Books**. All targets share the same CLI and webhook router:
+
+- `python3 main.py --target games|music|movies|books [options]`
+- `python3 webhook.py --page-id <notion_page_id> [options]` (auto-routes the page to the correct target)
+- Backwards-compatible shims (`notion_igdb_sync.py`, `notion_musicbrainz_sync.py`, etc.) simply call `main.py` with their default targets.
+
+### GitHub Actions workflow
+
+The repo includes `.github/workflows/notion-sync.yml`, which exposes a manual `workflow_dispatch` form:
+
+- Required input: `target` (games/music/movies/books)
+- Optional inputs: `page_id` (single page mode via webhook), `workers`, `database`, `created_after`, and the standard flags `force_icons`, `force_all`, `force_update`, `force_research`, `force_scraping`, `dry_run`
+- Secrets: set `NOTION_INTERNAL_INTEGRATION_SECRET`, the relevant `NOTION_*_DATABASE_ID` values, and API keys (IGDB, TMDb, MusicBrainz, Google Books, ComicVine, etc.) in the repository settings
+- A placeholder cron entry is commented out inside the workflow—uncomment or duplicate it when you’re ready for scheduled runs.
+
+Manual dispatch lets you test the router/webhook end-to-end in the cloud without needing four separate workflows or repos.
+
 ## 📋 Setup Guide
 
 ### 1. Environment Variables
@@ -73,8 +92,10 @@ IGDB_CLIENT_ID=your_igdb_client_id_here
 IGDB_CLIENT_SECRET=your_igdb_client_secret_here
 
 # Notion API Configuration
-NOTION_TOKEN=your_notion_integration_token_here
-NOTION_DATABASE_ID=your_notion_database_id_here
+NOTION_INTERNAL_INTEGRATION_SECRET=your_notion_integration_token_here
+NOTION_GAMES_DATABASE_ID=your_games_database_id_here
+NOTION_MOVIETV_DATABASE_ID=your_movies_tv_database_id_here
+NOTION_BOOKS_DATABASE_ID=your_books_database_id_here
 
 # Optional: Logging level (DEBUG, INFO, WARNING, ERROR)
 LOG_LEVEL=INFO

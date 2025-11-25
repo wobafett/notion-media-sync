@@ -7,8 +7,11 @@ Useful for iOS shortcuts or quick updates.
 
 import os
 import sys
-from notion_igdb_sync import NotionIGDbSync, validate_environment
+
 from dotenv import load_dotenv
+
+from notion_igdb_sync import NotionIGDbSync, validate_environment
+from shared.utils import get_database_id, get_notion_token
 
 # Load environment variables
 load_dotenv()
@@ -24,10 +27,10 @@ def main():
             sys.exit(1)
         
         # Get environment variables
-        notion_token = os.getenv('NOTION_TOKEN')
+        notion_token = get_notion_token()
         igdb_client_id = os.getenv('IGDB_CLIENT_ID')
         igdb_client_secret = os.getenv('IGDB_CLIENT_SECRET')
-        database_id = os.getenv('NOTION_DATABASE_ID')
+        database_id = get_database_id('NOTION_GAMES_DATABASE_ID', 'NOTION_DATABASE_ID')
         
         # Create sync instance with optimized settings for single page
         sync = NotionIGDbSync(notion_token, igdb_client_id, igdb_client_secret, database_id)

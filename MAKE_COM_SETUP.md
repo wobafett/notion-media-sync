@@ -305,3 +305,5 @@ Make.com free tier includes:
 
 That's it! Your Notion webhooks will now automatically trigger GitHub Actions to sync specific pages via Make.com. 🎉
 
+
+
