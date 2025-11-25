@@ -1786,6 +1786,13 @@ class NotionIGDbSync:
             # If we can't determine changes, assume there are changes to be safe
             return True
     
+    @staticmethod
+    def _normalize_id(raw_id: Optional[str]) -> Optional[str]:
+        """Normalize Notion IDs by stripping dashes and lowercasing."""
+        if not raw_id:
+            return None
+        return raw_id.replace('-', '').lower()
+    
     def _run_page_specific_sync(self, page_id: str, force_all: bool = False) -> Dict:
         """Run synchronization for a single explicit page."""
         logger.info(f"Page-specific mode enabled for Notion page {page_id}")
@@ -1803,7 +1810,11 @@ class NotionIGDbSync:
         parent = page.get('parent', {})
         parent_db_id = parent.get('database_id')
         
-        if parent_db_id != self.database_id:
+        # Normalize both IDs before comparison (handles dashes differences)
+        normalized_parent_id = self._normalize_id(parent_db_id)
+        normalized_configured_id = self._normalize_id(self.database_id)
+        
+        if normalized_parent_id != normalized_configured_id:
             logger.error(
                 "Page %s belongs to database %s, but configured database is %s",
                 page_id,
