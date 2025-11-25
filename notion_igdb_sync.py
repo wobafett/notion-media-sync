@@ -1786,8 +1786,71 @@ class NotionIGDbSync:
             # If we can't determine changes, assume there are changes to be safe
             return True
     
-    def run_sync(self, force_icons: bool = False, force_all: bool = False, max_workers: int = 3, last_page: bool = False) -> Dict:
+    def _run_page_specific_sync(self, page_id: str, force_all: bool = False) -> Dict:
+        """Run synchronization for a single explicit page."""
+        logger.info(f"Page-specific mode enabled for Notion page {page_id}")
+        start_time = time.time()
+        
+        page = self.notion.get_page(page_id)
+        if not page:
+            logger.error(f"Unable to retrieve Notion page {page_id}")
+            return {
+                'success': False,
+                'message': f'Page {page_id} could not be retrieved from Notion'
+            }
+        
+        # Validate the page belongs to the configured database
+        parent = page.get('parent', {})
+        parent_db_id = parent.get('database_id')
+        
+        if parent_db_id != self.database_id:
+            logger.error(
+                "Page %s belongs to database %s, but configured database is %s",
+                page_id,
+                parent_db_id,
+                self.database_id
+            )
+            return {
+                'success': False,
+                'message': f'Page {page_id} does not belong to the configured database'
+            }
+        
+        # Sync the single page
+        result = self.sync_page(page, force_icons=False, force_all=force_all)
+        
+        # Build results dict
+        results = {
+            'success': True,
+            'total_pages': 1,
+            'successful_updates': 0,
+            'failed_updates': 0,
+            'skipped_updates': 0,
+            'duration': time.time() - start_time
+        }
+        
+        if result is True:
+            results['successful_updates'] = 1
+        elif result is False:
+            results['failed_updates'] = 1
+            results['success'] = False
+        else:  # result is None (skipped)
+            results['skipped_updates'] = 1
+        
+        logger.info(f"Finished page-specific sync for page {page_id}")
+        return results
+    
+    def run_sync(self, force_icons: bool = False, force_all: bool = False, max_workers: int = 3, last_page: bool = False, page_id: Optional[str] = None) -> Dict:
         """Run the complete synchronization process."""
+        # Handle page-specific sync
+        if page_id:
+            if last_page:
+                logger.error("Cannot combine page-specific sync with last-page mode")
+                return {
+                    'success': False,
+                    'message': 'page-id mode cannot be combined with last-page mode'
+                }
+            return self._run_page_specific_sync(page_id, force_all)
+        
         logger.info("Starting Notion-IGDb synchronization")
         logger.info(f"Using {max_workers} parallel workers for processing")
         
@@ -1915,6 +1978,8 @@ def main():
                            help='Number of parallel workers (default: 3, max recommended: 4)')
         parser.add_argument('--last-page', action='store_true',
                            help='Sync only the most recently edited page')
+        parser.add_argument('--page-id', type=str,
+                           help='Sync only the specified Notion page ID')
         args = parser.parse_args()
         
         # Validate workers parameter
@@ -1936,10 +2001,16 @@ def main():
         igdb_client_secret = os.getenv('IGDB_CLIENT_SECRET')
         database_id = os.getenv('NOTION_DATABASE_ID')
         
+        # Check for repository_dispatch event (webhook trigger)
+        is_repo_dispatch = os.getenv('GITHUB_EVENT_NAME') == 'repository_dispatch'
+        if is_repo_dispatch and not args.page_id:
+            logger.error("Repository dispatch triggered without page-id; aborting to avoid full sync")
+            sys.exit(1)
+        
         # Create sync instance and run
         sync = NotionIGDbSync(notion_token, igdb_client_id, igdb_client_secret, database_id)
         
-        result = sync.run_sync(force_icons=args.force_icons, force_all=args.force_all, max_workers=args.workers, last_page=args.last_page)
+        result = sync.run_sync(force_icons=args.force_icons, force_all=args.force_all, max_workers=args.workers, last_page=args.last_page, page_id=args.page_id)
         
         if result['success']:
             logger.info("Synchronization completed successfully")
@@ -1947,6 +2018,8 @@ def main():
             logger.info(f"Failed: {result['failed_updates']} pages")
             if args.force_icons:
                 logger.info("Force icons mode completed - all page icons have been updated")
+            if args.page_id:
+                logger.info(f"Page-specific mode completed for page {args.page_id}")
             sys.exit(0)
         else:
             logger.error("Synchronization failed")

@@ -33,6 +33,10 @@ on:
       - 'notion_igdb_sync.py'
       - 'sync_last_page.py'
       - 'property_config.py'
+  
+  # Webhook trigger from Make.com for page-specific syncs
+  repository_dispatch:
+    types: [sync]
 
 jobs:
   sync:
@@ -59,8 +63,18 @@ jobs:
         IGDB_CLIENT_SECRET: ${{ secrets.IGDB_CLIENT_SECRET }}
         NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
         LOG_LEVEL: INFO
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
       run: |
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.last_page_only }}" = "true" ]; then
+        if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+          PAGE_ID="${{ github.event.client_payload.page_id }}"
+          if [ -z "$PAGE_ID" ]; then
+            echo "❌ Error: repository_dispatch triggered without page_id"
+            exit 1
+          fi
+          echo "🎮 Running page-specific sync for page: $PAGE_ID (webhook trigger)..."
+          python notion_igdb_sync.py --page-id "$PAGE_ID" --workers ${{ github.event.client_payload.workers || '3' }} \
+            ${{ github.event.client_payload.force_all && '--force-all' || '' }}
+        elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.last_page_only }}" = "true" ]; then
           echo "🎮 Running last page sync (manual trigger)..."
           python notion_igdb_sync.py --last-page --workers ${{ github.event.inputs.workers || '3' }} \
             ${{ github.event.inputs.force_icons && '--force-icons' || '' }}
