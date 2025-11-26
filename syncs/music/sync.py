@@ -138,7 +138,8 @@ class MusicBrainzAPI:
             'labels': {},
             'cover_art': {},
             'release_groups': {},
-            'artist_release_groups': {}
+            'artist_release_groups': {},
+            'artist_recordings': {}
         }
     
     def _rate_limit(self):
@@ -413,7 +414,8 @@ class MusicBrainzAPI:
             params = {
                 'query': ' AND '.join(query_parts),
                 'limit': limit,
-                'fmt': 'json'
+                'fmt': 'json',
+                'inc': 'artist-credits+aliases+releases'
             }
             
             response = self._make_api_request(url, params)
@@ -423,6 +425,30 @@ class MusicBrainzAPI:
             
         except Exception as e:
             logger.error(f"Error searching for recording '{title}': {e}")
+            return []
+
+    def get_artist_recordings(self, artist_mbid: str, limit: int = 100) -> List[Dict]:
+        """Return cached recordings for an artist, fetching once when needed."""
+        if not artist_mbid:
+            return []
+        cache_key = f"{artist_mbid}:{limit}"
+        if cache_key in self._cache['artist_recordings']:
+            return self._cache['artist_recordings'][cache_key]
+        try:
+            url = f"{self.base_url}/recording"
+            params = {
+                'query': f'arid:{artist_mbid}',
+                'limit': limit,
+                'fmt': 'json',
+                'inc': 'artist-credits+aliases+releases'
+            }
+            response = self._make_api_request(url, params)
+            data = response.json()
+            recordings = data.get('recordings', [])
+            self._cache['artist_recordings'][cache_key] = recordings
+            return recordings
+        except Exception as e:
+            logger.error(f"Error fetching recordings for artist {artist_mbid}: {e}")
             return []
     
     def get_recording(self, mbid: str) -> Optional[Dict]:
@@ -461,7 +487,7 @@ class MusicBrainzAPI:
             # Cover Art Archive API
             url = f"https://coverartarchive.org/release/{release_mbid}"
             
-            response = self._make_api_request(url)
+            response = self._make_api_request(url, max_retries=0)
             data = response.json()
             
             # Get front cover image
@@ -474,10 +500,13 @@ class MusicBrainzAPI:
                 self._cache['cover_art'][release_mbid] = cover_url
                 return cover_url
             
+            # Cache negative result to avoid repeated 404s
+            self._cache['cover_art'][release_mbid] = None
             return None
             
         except Exception as e:
             logger.debug(f"No cover art found for release {release_mbid}: {e}")
+            self._cache['cover_art'][release_mbid] = None
             return None
     
     def _get_spotify_access_token(self) -> Optional[str]:
@@ -1582,6 +1611,16 @@ class NotionMusicBrainzSync:
                         continue
                     match_reason = 'title'
                     recording_data = self.mb.get_recording(recording_id)
+                    if not recording_data and recording:
+                        # Build a minimal payload from the track so callers can skip the slower
+                        # recording search fallback even if the detailed API call fails.
+                        recording_data = {
+                            'id': recording_id,
+                            'title': track_title,
+                            'artist-credit': recording.get('artist-credit') or release_data.get('artist-credit') or [],
+                            'length': recording.get('length'),
+                            'releases': [release_data],
+                        }
                     if not recording_data:
                         continue
                 elif recording_id:
@@ -1723,6 +1762,9 @@ class NotionMusicBrainzSync:
             True if the recording is by the artist, False otherwise
         """
         try:
+            # This helper often drives the longest wall-clock time on a single song because we may
+            # need to fetch the full recording payload (rate-limited) whenever search results omit
+            # artist-credit info. Keep callers aware so they can cache results.
             recording_id = recording_data.get('id')
             recording_title = recording_data.get('title', 'Unknown')
             
@@ -3152,6 +3194,7 @@ class NotionMusicBrainzSync:
             recording_data = None
             matched_release = None
             matched_track = None
+            release_group_used = False
             if existing_mbid:
                 recording_data = self.mb.get_recording(existing_mbid)
                 if not recording_data:
@@ -3163,6 +3206,9 @@ class NotionMusicBrainzSync:
                     return None
             
             if not recording_data:
+                # Hot path: walking release-groups is more expensive than recording search but
+                # dramatically more accurate, so we do it once before falling back to the
+                # brute-force recording search below.
                 # Try album-first approach using release-groups before falling back to recording search
                 if artist_mbid:
                     logger.info("Attempting release-group driven search for '%s'", title)
@@ -3177,33 +3223,28 @@ class NotionMusicBrainzSync:
                         if recording_data:
                             matched_release = release_match.get('release')
                             matched_track = release_match.get('track')
+                            release_group_used = True
                             logger.info("Release-group search succeeded for '%s'", title)
                         else:
                             logger.info("Release-group search found release but missing recording data for '%s'", title)
                 
                 if not recording_data:
+                    # The fallback recording search can fan out into dozens of MusicBrainz calls,
+                    # so try to keep the result set tight and reuse cached payloads wherever possible.
                     # Try search with artist MBID first (most accurate), then artist name, then without artist
                     search_results = None
+                    search_limit = 20 if release_group_used else 50
                     if artist_mbid:
                         logger.info(f"Searching with artist MBID: {artist_mbid}")
                     # First try with title in query
-                    search_results = self.mb.search_recordings(title, None, album_name, artist_mbid=artist_mbid, limit=50)
+                    search_results = self.mb.search_recordings(title, None, album_name, artist_mbid=artist_mbid, limit=search_limit)
                     logger.info(f"Search with title returned {len(search_results)} results")
                     
                     # If we didn't find exact matches, try searching all recordings by this artist
                     # and filter by title in code (more reliable)
                     if not search_results or not any(self._titles_match_exactly(title, r.get('title', '')) for r in search_results):
                         logger.info(f"No exact title matches found, searching all recordings by artist {artist_mbid}")
-                        # Search for all recordings by this artist (no title filter)
-                        url = f"{self.mb.base_url}/recording"
-                        params = {
-                            'query': f'arid:{artist_mbid}',
-                            'limit': 100,  # Get more results
-                            'fmt': 'json'
-                        }
-                        response = self.mb._make_api_request(url, params)
-                        data = response.json()
-                        all_artist_recordings = data.get('recordings', [])
+                        all_artist_recordings = self.mb.get_artist_recordings(artist_mbid, limit=120)
                         logger.info(f"Found {len(all_artist_recordings)} total recordings by artist")
                         
                         # Filter by exact title match (including aliases)
@@ -3246,12 +3287,12 @@ class NotionMusicBrainzSync:
                         logger.info(f"Filtered to {len(search_results)} recordings with exact title/alias match")
                 elif artist_name:
                     logger.debug(f"Searching with artist name: {artist_name}")
-                    search_results = self.mb.search_recordings(title, artist_name, album_name, limit=50)
+                    search_results = self.mb.search_recordings(title, artist_name, album_name, limit=search_limit)
                 
                 if not search_results:
                     # If search with artist failed completely, try without artist
                     logger.debug(f"No results with artist filter, trying without artist filter")
-                    search_results = self.mb.search_recordings(title, None, album_name, limit=50)
+                    search_results = self.mb.search_recordings(title, None, album_name, limit=search_limit)
                 
                 if not search_results:
                     logger.warning(f"Could not find song: {title}")
@@ -3269,6 +3310,8 @@ class NotionMusicBrainzSync:
                 best_match_on_album = None  # Preferred: match that appears on the album
                 exact_matches = []
                 candidate_matches = []
+                artist_check_cache: Dict[str, bool] = {}
+                artist_mismatch_budget = 20
                 for result in search_results:
                     result_title = result.get('title', '')
                     # Check if title matches (including aliases)
@@ -3296,8 +3339,17 @@ class NotionMusicBrainzSync:
                     
                     # If we have an artist MBID, verify the recording is by that artist (required)
                     if artist_mbid:
-                        if not self._recording_is_by_artist(result, artist_mbid):
+                        recording_id = result.get('id')
+                        cached_match = artist_check_cache.get(recording_id) if recording_id else None
+                        matches_artist = cached_match if cached_match is not None else self._recording_is_by_artist(result, artist_mbid)
+                        if recording_id:
+                            artist_check_cache[recording_id] = matches_artist
+                        if not matches_artist:
                             logger.info(f"Recording '{result_title}' is not by artist {artist_mbid}, skipping")
+                            artist_mismatch_budget -= 1
+                            if artist_mismatch_budget <= 0:
+                                logger.info("Artist mismatch budget exhausted; stopping search iteration early")
+                                break
                             continue
                     
                     # If we have an album MBID, check if the recording appears on that album (preferred)
@@ -3323,7 +3375,7 @@ class NotionMusicBrainzSync:
                 # If no exact match found and we searched with artist, try without artist filter
                 if not best_match and (artist_mbid or artist_name) and search_results:
                     logger.debug(f"No exact match found with artist filter, trying search without artist filter")
-                    search_results_no_artist = self.mb.search_recordings(title, None, album_name, limit=50)
+                    search_results_no_artist = self.mb.search_recordings(title, None, album_name, limit=search_limit)
                     if search_results_no_artist:
                         logger.debug(f"Search without artist returned {len(search_results_no_artist)} results")
                         best_match_on_album = None
@@ -3353,7 +3405,12 @@ class NotionMusicBrainzSync:
                             
                             # If we have an artist MBID, verify the recording is by that artist (required)
                             if artist_mbid:
-                                if not self._recording_is_by_artist(result, artist_mbid):
+                                recording_id = result.get('id')
+                                cached_match = artist_check_cache.get(recording_id) if recording_id else None
+                                matches_artist = cached_match if cached_match is not None else self._recording_is_by_artist(result, artist_mbid)
+                                if recording_id:
+                                    artist_check_cache[recording_id] = matches_artist
+                                if not matches_artist:
                                     logger.info(f"Recording '{result_title}' is not by artist {artist_mbid}, skipping")
                                     continue
                             
