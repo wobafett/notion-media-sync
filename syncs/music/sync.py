@@ -3195,6 +3195,7 @@ class NotionMusicBrainzSync:
             matched_release = None
             matched_track = None
             release_group_used = False
+            search_limit = 50
             if existing_mbid:
                 recording_data = self.mb.get_recording(existing_mbid)
                 if not recording_data:
