@@ -16,11 +16,6 @@ on:
         description: Optional Notion page ID for single-page mode (uses webhook router)
         required: false
         type: string
-      workers:
-        description: Worker threads for full syncs (games/movies/books)
-        required: false
-        default: "3"
-        type: number
       database:
         description: Music target database (artists, albums, songs, labels, locations)
         required: false
@@ -29,11 +24,6 @@ on:
         description: Music created-after filter (YYYY-MM-DD or 'today')
         required: false
         type: string
-      force_icons:
-        description: Force icon refresh
-        required: false
-        default: false
-        type: boolean
       force_all:
         description: Process completed pages
         required: false
@@ -109,7 +99,6 @@ jobs:
         run: |
           set -euo pipefail
           args=()
-          if [ "${{ inputs.force_icons }}" = 'true' ]; then args+=('--force-icons'); fi
           if [ "${{ inputs.force_all }}" = 'true' ]; then args+=('--force-all'); fi
           if [ "${{ inputs.force_update }}" = 'true' ]; then args+=('--force-update'); fi
           if [ "${{ inputs.force_research }}" = 'true' ]; then args+=('--force-research'); fi
@@ -130,8 +119,7 @@ jobs:
             echo "Error: target input is required when page_id is not provided."
             exit 1
           fi
-          args=(--target "${{ inputs.target }}" --workers "${{ inputs.workers }}")
-          if [ "${{ inputs.force_icons }}" = 'true' ]; then args+=('--force-icons'); fi
+          args=(--target "${{ inputs.target }}")
           if [ "${{ inputs.force_all }}" = 'true' ]; then args+=('--force-all'); fi
           if [ "${{ inputs.force_update }}" = 'true' ]; then args+=('--force-update'); fi
           if [ -n "${{ inputs.database }}" ]; then args+=('--database' "${{ inputs.database }}"); fi
