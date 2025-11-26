@@ -4323,7 +4323,8 @@ def get_database_ids() -> List[str]:
         'NOTION_ARTISTS_DATABASE_ID',
         'NOTION_ALBUMS_DATABASE_ID',
         'NOTION_SONGS_DATABASE_ID',
-        'NOTION_LABELS_DATABASE_ID'
+        'NOTION_LABELS_DATABASE_ID',
+        'NOTION_LOCATIONS_DATABASE_ID'
     ]
     normalized_ids = []
     for key in env_vars:
