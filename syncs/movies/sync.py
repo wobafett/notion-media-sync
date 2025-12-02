@@ -502,6 +502,42 @@ class NotionTMDbSync:
             return 'tv'
 
         return None
+
+    def _normalize_content_type_value(self, content_type: Optional[str]) -> Optional[str]:
+        """Convert internal content type strings to the exact Notion select values."""
+        if not content_type:
+            return None
+        lowered = content_type.lower()
+        if lowered == 'movie':
+            return 'Movie'
+        if lowered == 'tv':
+            return 'TV'
+        return content_type.title()
+
+    def _ensure_content_type_property(self, page_id: str, content_type: str) -> None:
+        """Backfill the Type select when we inferred the content type."""
+        select_value = self._normalize_content_type_value(content_type)
+        if not select_value:
+            return
+
+        property_id = self.property_mapping.get('content_type_property_id')
+        if not property_id:
+            return
+
+        property_key = self._get_property_key(property_id)
+        if not property_key:
+            return
+
+        properties = {
+            property_key: {
+                'select': {'name': select_value}
+            }
+        }
+
+        if self.notion.update_page(page_id, properties):
+            logger.info("Backfilled content type '%s' for page %s", select_value, page_id)
+        else:
+            logger.warning("Failed to backfill content type for page %s", page_id)
     
     def compare_and_format_properties(self, current_data: Dict, tmdb_data: Dict, content_type: str) -> tuple[Dict, bool]:
         """Compare current data with TMDb data and return only changed properties."""
@@ -617,6 +653,18 @@ class NotionTMDbSync:
                     if property_key:
                         new_properties[property_key] = {
                             'number': tmdb_data['number_of_seasons']
+                        }
+                        has_changes = True
+
+            # Content Type select (backfill when inferred)
+            select_value = self._normalize_content_type_value(content_type)
+            if select_value and self.property_mapping['content_type_property_id']:
+                current_type = current_data.get('content_type_property_id')
+                if values_differ(current_type, select_value):
+                    property_key = self._get_property_key(self.property_mapping['content_type_property_id'])
+                    if property_key:
+                        new_properties[property_key] = {
+                            'select': {'name': select_value}
                         }
                         has_changes = True
             
@@ -1039,11 +1087,12 @@ class NotionTMDbSync:
                     }
             
             # Content Type
-            if self.property_mapping['content_type_property_id']:
+            select_value = self._normalize_content_type_value(content_type)
+            if select_value and self.property_mapping['content_type_property_id']:
                 property_key = self._get_property_key(self.property_mapping['content_type_property_id'])
                 if property_key:
                     properties[property_key] = {
-                        'select': {'name': content_type.title()}
+                        'select': {'name': select_value}
                     }
             
             # Last Updated
@@ -1297,6 +1346,7 @@ class NotionTMDbSync:
         try:
             page_id = page['id']
             current_data = self.extract_current_data(page)
+            type_missing = not bool(current_data.get('content_type_property_id'))
             title_and_type = self.extract_title_and_type(page, current_data)
             
             if not title_and_type:
@@ -1345,13 +1395,17 @@ class NotionTMDbSync:
             # Only skip if the page has been updated at least once (has TMDb data in Notion)
             if not force_all and not force_update:
                 status = details.get('status', '').lower()
-                has_tmdb_data = bool(current_data.get('tmdb_id'))  # Check if Notion page has TMDb ID
+                has_tmdb_data = bool(current_data.get('tmdb_id_property_id'))
                 
                 if content_type == 'tv' and status in ['ended', 'canceled'] and has_tmdb_data:
                     logger.info(f"Skipping completed TV show: {title} (status: {status}, already synced)")
+                    if type_missing:
+                        self._ensure_content_type_property(page_id, content_type)
                     return True  # Skip but don't count as failed
                 elif content_type == 'movie' and status in ['released'] and has_tmdb_data:
                     logger.info(f"Skipping released movie: {title} (status: {status}, already synced)")
+                    if type_missing:
+                        self._ensure_content_type_property(page_id, content_type)
                     return True  # Skip but don't count as failed
             
             # Compare current data with TMDb data and get only changed properties
@@ -1373,6 +1427,8 @@ class NotionTMDbSync:
             # Only update if there are changes (or if forcing icon updates)
             if not has_changes and not cover_changed and not force_icons:
                 logger.info(f"No changes detected for: {title}")
+                if type_missing:
+                    self._ensure_content_type_property(page_id, content_type)
                 return True
             
             # Determine icon based on content type (default to emojis)
