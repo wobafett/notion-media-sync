@@ -624,6 +624,18 @@ class NotionTMDbSync:
                             'status': {'name': tmdb_data['status']}
                         }
                         has_changes = True
+
+            # Rating (vote average)
+            if tmdb_data.get('vote_average') is not None and self.property_mapping['rating_property_id']:
+                current_rating = current_data.get('rating_property_id')
+                new_rating = tmdb_data['vote_average']
+                if values_differ(current_rating, new_rating):
+                    property_key = self._get_property_key(self.property_mapping['rating_property_id'])
+                    if property_key:
+                        new_properties[property_key] = {
+                            'number': new_rating
+                        }
+                        has_changes = True
             
             # TMDb ID
             if tmdb_data.get('id') and self.property_mapping['tmdb_id_property_id']:
@@ -988,128 +1000,6 @@ class NotionTMDbSync:
     def _get_property_key(self, property_id: str) -> Optional[str]:
         """Get the property key for a given property ID."""
         return self.property_id_to_key.get(property_id)
-    
-    def format_notion_properties(self, tmdb_data: Dict, content_type: str) -> Dict:
-        """Format TMDb data for Notion properties."""
-        properties = {}
-        
-        try:
-            # Basic information - Title
-            if tmdb_data.get('title') or tmdb_data.get('name'):
-                title = tmdb_data.get('title') or tmdb_data.get('name')
-                if self.property_mapping['title_property_id']:
-                    property_key = self._get_property_key(self.property_mapping['title_property_id'])
-                    if property_key:
-                        properties[property_key] = {
-                            'title': [{'text': {'content': title}}]
-                        }
-            
-            # Overview/Description
-            if tmdb_data.get('overview') and self.property_mapping['description_property_id']:
-                property_key = self._get_property_key(self.property_mapping['description_property_id'])
-                if property_key:
-                    properties[property_key] = {
-                        'rich_text': [{'text': {'content': tmdb_data['overview']}}]
-                    }
-            
-            # Release Date
-            if (tmdb_data.get('release_date') or tmdb_data.get('first_air_date')) and self.property_mapping['release_date_property_id']:
-                release_date = tmdb_data.get('release_date') or tmdb_data.get('first_air_date')
-                property_key = self._get_property_key(self.property_mapping['release_date_property_id'])
-                if property_key:
-                    properties[property_key] = {
-                        'date': {'start': release_date}
-                    }
-            
-            # Rating
-            if tmdb_data.get('vote_average') is not None and self.property_mapping['rating_property_id']:
-                property_key = self._get_property_key(self.property_mapping['rating_property_id'])
-                if property_key:
-                    properties[property_key] = {
-                        'number': tmdb_data['vote_average']
-                    }
-            
-            # Vote Count
-            if tmdb_data.get('vote_count') and self.property_mapping['vote_count_property_id']:
-                property_key = self._get_property_key(self.property_mapping['vote_count_property_id'])
-                if property_key:
-                    properties[property_key] = {
-                        'number': tmdb_data['vote_count']
-                    }
-            
-            # Runtime (for movies) or Number of Seasons (for TV)
-            if content_type == 'movie' and tmdb_data.get('runtime') and self.property_mapping['runtime_property_id']:
-                property_key = self._get_property_key(self.property_mapping['runtime_property_id'])
-                if property_key:
-                    properties[property_key] = {
-                        'number': tmdb_data['runtime']
-                    }
-            elif content_type == 'tv' and tmdb_data.get('number_of_seasons') and self.property_mapping['seasons_property_id']:
-                property_key = self._get_property_key(self.property_mapping['seasons_property_id'])
-                if property_key:
-                    properties[property_key] = {
-                        'number': tmdb_data['number_of_seasons']
-                    }
-            
-            # Genres
-            if tmdb_data.get('genres') and self.property_mapping['genres_property_id']:
-                genre_names = [genre['name'] for genre in tmdb_data['genres']]
-                property_key = self._get_property_key(self.property_mapping['genres_property_id'])
-                if property_key:
-                    properties[property_key] = {
-                        'multi_select': [{'name': genre} for genre in genre_names]
-                    }
-            
-            # Status
-            if tmdb_data.get('status') and self.property_mapping['status_property_id']:
-                property_key = self._get_property_key(self.property_mapping['status_property_id'])
-                if property_key:
-                    # Status properties in Notion are special - they need a status object
-                    properties[property_key] = {
-                        'status': {'name': tmdb_data['status']}
-                    }
-            
-            # TMDb ID
-            if tmdb_data.get('id') and self.property_mapping['tmdb_id_property_id']:
-                property_key = self._get_property_key(self.property_mapping['tmdb_id_property_id'])
-                if property_key:
-                    properties[property_key] = {
-                        'number': tmdb_data['id']
-                    }
-            
-            # Cover Image (Backdrop)
-            if tmdb_data.get('backdrop_path') and self.property_mapping['cover_image_property_id']:
-                cover_url = f"https://image.tmdb.org/t/p/original{tmdb_data['backdrop_path']}"
-                property_key = self._get_property_key(self.property_mapping['cover_image_property_id'])
-                if property_key:
-                    properties[property_key] = {
-                        'url': cover_url
-                    }
-            
-            # Content Type
-            select_value = self._normalize_content_type_value(content_type)
-            if select_value and self.property_mapping['content_type_property_id']:
-                property_key = self._get_property_key(self.property_mapping['content_type_property_id'])
-                if property_key:
-                    properties[property_key] = {
-                        'select': {'name': select_value}
-                    }
-            
-            # Last Updated
-            if self.property_mapping['last_updated_property_id']:
-                property_key = self._get_property_key(self.property_mapping['last_updated_property_id'])
-                if property_key:
-                    properties[property_key] = {
-                        'date': {'start': datetime.now().isoformat()}
-                    }
-            
-            # Extended Properties
-            self._format_extended_properties(tmdb_data, content_type, properties)
-            
-        except Exception as e:
-            logger.error(f"Error formatting properties: {e}")
-        
-        return properties
     
     def _format_extended_properties(self, tmdb_data: Dict, content_type: str, properties: Dict):
         """Format extended TMDb properties."""
