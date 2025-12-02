@@ -2489,40 +2489,69 @@ class NotionMusicBrainzSync:
                     if prop_key:
                         properties[prop_key] = {'number': total_tracks}
             
-            # Genres - use only genres directly from the release-group (not aggregated)
-            # This matches what MusicBrainz shows on the release page
-            if release_data.get('release-group') and release_data['release-group'].get('genres'):
-                genres = [genre['name'] for genre in release_data['release-group']['genres'] if genre.get('name')]
-                if genres and self.albums_properties.get('genres'):
-                    prop_key = self._get_property_key(self.albums_properties['genres'], 'albums')
-                    if prop_key:
-                        properties[prop_key] = {
-                            'multi_select': [{'name': genre} for genre in genres[:10]]  # Limit to 10 genres
-                        }
+            # Genres - prefer explicit release-group genres, fall back to release-level genres,
+            # and finally to release-group tags if MusicBrainz only surfaced genres there.
+            genres = []
+            release_group = release_data.get('release-group') or {}
+            if release_group.get('genres'):
+                genres.extend(
+                    genre['name']
+                    for genre in release_group['genres']
+                    if isinstance(genre, dict) and genre.get('name')
+                )
+            if release_data.get('genres'):
+                genres.extend(
+                    genre['name']
+                    for genre in release_data['genres']
+                    if isinstance(genre, dict) and genre.get('name')
+                )
+            if not genres and release_group.get('tags'):
+                # Some releases only expose genres as tags in the release-group payload.
+                genres.extend(
+                    tag['name']
+                    for tag in release_group['tags']
+                    if isinstance(tag, dict) and tag.get('name')
+                )
             
-            # Tags - these are separate from genres
-            # Only include tags that are different from genres (genres have priority)
-            if release_data.get('tags') and self.albums_properties.get('tags'):
-                # Get genre names for comparison
-                genre_names = set()
-                if release_data.get('release-group') and release_data['release-group'].get('genres'):
-                    genre_names = {genre['name'] for genre in release_data['release-group']['genres'] if genre.get('name')}
-                
-                # Filter tags: exclude tags that match genres (genres have priority)
+            # Deduplicate while preserving priority order, then limit to 10 entries
+            deduped_genres = []
+            seen_genres = set()
+            for genre_name in genres:
+                if genre_name and genre_name not in seen_genres:
+                    deduped_genres.append(genre_name)
+                    seen_genres.add(genre_name)
+            if deduped_genres and self.albums_properties.get('genres'):
+                prop_key = self._get_property_key(self.albums_properties['genres'], 'albums')
+                if prop_key:
+                    properties[prop_key] = {
+                        'multi_select': [{'name': genre} for genre in deduped_genres[:10]]
+                    }
+            
+            # Tags - treat as secondary labels once genres have been assigned
+            tag_sources = []
+            release_tags = release_data.get('tags') or []
+            if release_tags:
+                tag_sources.append(release_tags)
+            release_group_tags = release_group.get('tags') or []
+            if release_group_tags:
+                tag_sources.append(release_group_tags)
+            
+            if tag_sources and self.albums_properties.get('tags'):
                 tags = []
-                for tag in release_data['tags']:
-                    tag_name = tag.get('name')
-                    # Only include tags that:
-                    # 1. Have a name
-                    # 2. Are different from genres (genres take priority)
-                    if tag_name and tag_name not in genre_names:
-                        tags.append(tag_name)
-                
+                seen_tags = set(deduped_genres)  # prevent genre/tag duplication
+                for tag_set in tag_sources:
+                    for tag in tag_set:
+                        if not isinstance(tag, dict):
+                            continue
+                        tag_name = tag.get('name')
+                        if tag_name and tag_name not in seen_tags:
+                            tags.append(tag_name)
+                            seen_tags.add(tag_name)
                 if tags:
                     prop_key = self._get_property_key(self.albums_properties['tags'], 'albums')
                     if prop_key:
                         properties[prop_key] = {
-                            'multi_select': [{'name': tag} for tag in tags[:10]]  # Limit to 10 tags
+                            'multi_select': [{'name': tag} for tag in tags[:10]]
                         }
             
             # Album Type (from release-group primary-type)
