@@ -285,6 +285,7 @@ class NotionTMDbSync:
         self.field_behavior = FIELD_BEHAVIOR
         
         self._load_database_schema()
+        self._type_cache: Dict[str, str] = {}
     
     def _load_database_schema(self):
         """Load and analyze the database schema to create property mappings."""
@@ -426,10 +427,11 @@ class NotionTMDbSync:
             logger.error(f"Error extracting current data from page {page.get('id')}: {e}")
             return {}
     
-    def extract_title_and_type(self, page: Dict) -> Optional[tuple]:
-        """Extract title and content type from a Notion page."""
+    def extract_title_and_type(self, page: Dict, current_data: Dict) -> Optional[tuple]:
+        """Extract title and content type from a Notion page. Infer content type if missing."""
         try:
             properties = page.get('properties', {})
+            page_id = page.get('id')
             
             # Get title using mapped property ID
             title = None
@@ -451,13 +453,55 @@ class NotionTMDbSync:
             
             if title and content_type:
                 return (title, content_type)
-            else:
-                logger.warning(f"Missing title or content type for page {page.get('id')}")
-                return None
+            
+            inferred_type = self._infer_content_type(page_id, title, current_data)
+            if title and inferred_type:
+                logger.info("Inferred content type '%s' for page %s", inferred_type, page_id)
+                return (title, inferred_type)
+            
+            logger.warning(
+                "Missing title or content type for page %s (title=%s, inferred_type=%s)",
+                page_id,
+                "present" if title else "missing",
+                inferred_type or "unavailable",
+            )
+            return None
                 
         except Exception as e:
             logger.error(f"Error extracting data from page {page.get('id')}: {e}")
             return None
+
+    def _infer_content_type(self, page_id: Optional[str], title: Optional[str], current_data: Dict) -> Optional[str]:
+        """Infer whether an entry is a movie or TV show when the select property is missing."""
+        if not title:
+            return None
+
+        cached = self._type_cache.get(page_id)
+        if cached:
+            return cached
+
+        tmdb_id = current_data.get('tmdb_id_property_id')
+        if tmdb_id:
+            details = self.tmdb.get_movie_details(tmdb_id)
+            if details:
+                self._type_cache[page_id] = 'movie'
+                return 'movie'
+            details = self.tmdb.get_tv_details(tmdb_id)
+            if details:
+                self._type_cache[page_id] = 'tv'
+                return 'tv'
+
+        movie_search = self.tmdb.search_movie(title)
+        if movie_search:
+            self._type_cache[page_id] = 'movie'
+            return 'movie'
+
+        tv_search = self.tmdb.search_tv(title)
+        if tv_search:
+            self._type_cache[page_id] = 'tv'
+            return 'tv'
+
+        return None
     
     def compare_and_format_properties(self, current_data: Dict, tmdb_data: Dict, content_type: str) -> tuple[Dict, bool]:
         """Compare current data with TMDb data and return only changed properties."""
@@ -1252,7 +1296,8 @@ class NotionTMDbSync:
         """
         try:
             page_id = page['id']
-            title_and_type = self.extract_title_and_type(page)
+            current_data = self.extract_current_data(page)
+            title_and_type = self.extract_title_and_type(page, current_data)
             
             if not title_and_type:
                 logger.warning(f"Missing title or content type for page {page_id}")
@@ -1262,8 +1307,7 @@ class NotionTMDbSync:
             title, content_type = title_and_type
             logger.info(f"Processing: {title} ({content_type})")
             
-            # Extract current data for comparison
-            current_data = self.extract_current_data(page)
+            # Extract current data for comparison (already pulled before inference)
             
             # Check if we already have TMDb ID and can skip search
             current_tmdb_id = current_data.get('tmdb_id_property_id')
