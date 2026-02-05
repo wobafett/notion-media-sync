@@ -77,6 +77,11 @@ def build_parser(targets) -> argparse.ArgumentParser:
         action="store_true",
         help="Books target: simulate sync without updating Notion",
     )
+    parser.add_argument(
+        "--spotify-url",
+        type=str,
+        help="Music target: Spotify URL for identification (track, album, or artist)",
+    )
     return parser
 
 

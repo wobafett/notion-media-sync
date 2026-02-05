@@ -49,6 +49,10 @@ on:
         required: false
         default: false
         type: boolean
+      spotify_url:
+        description: Optional Spotify URL (for music syncs only)
+        required: false
+        type: string
   # schedule:
   #   - cron: "0 0 * * *" # Placeholder – duplicate and customize per target as needed
 
@@ -104,6 +108,7 @@ jobs:
           if [ "${{ inputs.force_research }}" = 'true' ]; then args+=('--force-research'); fi
           if [ "${{ inputs.force_scraping }}" = 'true' ]; then args+=('--force-scraping'); fi
           if [ "${{ inputs.dry_run }}" = 'true' ]; then args+=('--dry-run'); fi
+          if [ -n "${{ inputs.spotify_url }}" ]; then args+=('--spotify-url' "${{ inputs.spotify_url }}"); fi
           python3 webhook.py --page-id "${{ inputs.page_id }}" "${args[@]}"
 
       - name: Run target sync
@@ -124,5 +129,6 @@ jobs:
           if [ "${{ inputs.force_update }}" = 'true' ]; then args+=('--force-update'); fi
           if [ -n "${{ inputs.database }}" ]; then args+=('--database' "${{ inputs.database }}"); fi
           if [ -n "${{ inputs.created_after }}" ]; then args+=('--created-after' "${{ inputs.created_after }}"); fi
+          if [ -n "${{ inputs.spotify_url }}" ]; then args+=('--spotify-url' "${{ inputs.spotify_url }}"); fi
           python3 main.py "${args[@]}"
 

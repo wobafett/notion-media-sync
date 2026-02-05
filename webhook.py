@@ -24,6 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--force-research", action="store_true", help="Books target: re-search even when IDs exist")
     parser.add_argument("--force-scraping", action="store_true", help="Books target: force ComicVine scraping")
     parser.add_argument("--dry-run", action="store_true", help="Books target: simulate sync without writing to Notion")
+    parser.add_argument("--spotify-url", type=str, help="Music target: Spotify URL for identification (track, album, or artist)")
     return parser
 
 
@@ -65,6 +66,7 @@ def main():
         "force_research": args.force_research,
         "force_scraping": args.force_scraping,
         "dry_run": args.dry_run,
+        "spotify_url": args.spotify_url,
     }
 
     # Remove None values so adapters don't see extraneous kwargs

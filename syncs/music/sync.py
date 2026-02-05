@@ -17,7 +17,7 @@ import requests
 from shared.change_detection import has_property_changes
 from shared.logging_config import get_logger
 from shared.notion_api import NotionAPI
-from shared.utils import clean_multi_select_value, get_notion_token, normalize_id
+from shared.utils import build_multi_select_options, get_notion_token, normalize_id
 
 logger = get_logger(__name__)
 
@@ -476,6 +476,108 @@ class MusicBrainzAPI:
             logger.error(f"Error getting recording {mbid}: {e}")
             return None
     
+    def search_recording_by_isrc(self, isrc: str) -> Optional[Dict]:
+        """
+        Search for a recording by ISRC code.
+        
+        ISRC (International Standard Recording Code) uniquely identifies a specific recording.
+        This provides highly accurate matching compared to name-based searches.
+        """
+        try:
+            if not isrc:
+                return None
+            
+            url = f"{self.base_url}/isrc/{isrc}"
+            params = {
+                'inc': 'artists+releases+release-groups+artist-credits+aliases',
+                'fmt': 'json'
+            }
+            
+            response = self._make_api_request(url, params)
+            data = response.json()
+            
+            # ISRC lookup returns a recording directly (not a list)
+            if data and 'id' in data:
+                logger.info(f"Found recording via ISRC {isrc}: {data.get('title')} by {data.get('artist-credit', [{}])[0].get('name')}")
+                return data
+            
+            logger.debug(f"No recording found for ISRC {isrc}")
+            return None
+            
+        except Exception as e:
+            logger.debug(f"Error searching for ISRC {isrc}: {e}")
+            return None
+    
+    def search_release_by_barcode(self, barcode: str) -> Optional[Dict]:
+        """
+        Search for a release by barcode (UPC/EAN).
+        
+        Barcode uniquely identifies a specific release (album).
+        This provides accurate matching compared to name-based searches.
+        """
+        try:
+            if not barcode:
+                return None
+            
+            url = f"{self.base_url}/release"
+            params = {
+                'query': f'barcode:{barcode}',
+                'fmt': 'json',
+                'limit': 5
+            }
+            
+            response = self._make_api_request(url, params)
+            data = response.json()
+            
+            releases = data.get('releases', [])
+            if releases:
+                # Return the first (best) match
+                release = releases[0]
+                logger.info(f"Found release via barcode {barcode}: {release.get('title')} by {release.get('artist-credit', [{}])[0].get('name')}")
+                return release
+            
+            logger.debug(f"No release found for barcode {barcode}")
+            return None
+            
+        except Exception as e:
+            logger.debug(f"Error searching for barcode {barcode}: {e}")
+            return None
+    
+    def get_artist_by_spotify_id(self, spotify_id: str) -> Optional[Dict]:
+        """
+        Find MusicBrainz artist by Spotify ID in relationships.
+        
+        Searches for artists that have a Spotify URL relationship matching the given ID.
+        """
+        try:
+            if not spotify_id:
+                return None
+            
+            spotify_url = f"https://open.spotify.com/artist/{spotify_id}"
+            url = f"{self.base_url}/artist"
+            params = {
+                'query': f'url:"{spotify_url}"',
+                'fmt': 'json',
+                'limit': 5
+            }
+            
+            response = self._make_api_request(url, params)
+            data = response.json()
+            
+            artists = data.get('artists', [])
+            if artists:
+                # Return the first (best) match
+                artist = artists[0]
+                logger.info(f"Found artist via Spotify ID {spotify_id}: {artist.get('name')}")
+                return artist
+            
+            logger.debug(f"No artist found for Spotify ID {spotify_id}")
+            return None
+            
+        except Exception as e:
+            logger.debug(f"Error searching for Spotify ID {spotify_id}: {e}")
+            return None
+    
     def get_cover_art_url(self, release_mbid: str) -> Optional[str]:
         """Get cover art URL from Cover Art Archive."""
         try:
@@ -815,6 +917,119 @@ class MusicBrainzAPI:
             logger.debug(f"No artist image found for {artist_mbid}: {e}")
             return None
     
+    def _parse_spotify_url(self, url: str) -> Optional[Dict[str, str]]:
+        """
+        Parse Spotify URL and extract type + ID.
+        
+        Supports formats:
+        - https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6
+        - https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy
+        - https://open.spotify.com/artist/0OdUWJ0sBjDrqHygGUXeCF
+        - spotify:track:6rqhFgbbKwnb9MLmUQDhG6
+        
+        Returns: {"type": "track"|"album"|"artist", "id": "spotify_id"} or None
+        """
+        import re
+        
+        if not url:
+            return None
+        
+        # Pattern for https://open.spotify.com/{type}/{id}
+        web_pattern = r'https?://open\.spotify\.com/(track|album|artist)/([a-zA-Z0-9]+)'
+        web_match = re.search(web_pattern, url)
+        if web_match:
+            return {"type": web_match.group(1), "id": web_match.group(2)}
+        
+        # Pattern for spotify:{type}:{id}
+        uri_pattern = r'spotify:(track|album|artist):([a-zA-Z0-9]+)'
+        uri_match = re.search(uri_pattern, url)
+        if uri_match:
+            return {"type": uri_match.group(1), "id": uri_match.group(2)}
+        
+        logger.warning(f"Unable to parse Spotify URL: {url}")
+        return None
+    
+    def _get_spotify_track_by_id(self, track_id: str) -> Optional[Dict]:
+        """Fetch full track metadata from Spotify API by ID."""
+        access_token = self._get_spotify_access_token()
+        if not access_token:
+            return None
+        
+        url = f"https://api.spotify.com/v1/tracks/{track_id}"
+        headers = {"Authorization": f"Bearer {access_token}"}
+        
+        try:
+            response = self._make_api_request(url, headers=headers, cache=False)
+            if response and response.get("id"):
+                logger.info(f"Fetched Spotify track: {response.get('name')} by {response.get('artists', [{}])[0].get('name')}")
+                return response
+        except Exception as e:
+            logger.warning(f"Error fetching Spotify track {track_id}: {e}")
+        
+        return None
+    
+    def _get_spotify_album_by_id(self, album_id: str) -> Optional[Dict]:
+        """Fetch full album metadata from Spotify API by ID."""
+        access_token = self._get_spotify_access_token()
+        if not access_token:
+            return None
+        
+        url = f"https://api.spotify.com/v1/albums/{album_id}"
+        headers = {"Authorization": f"Bearer {access_token}"}
+        
+        try:
+            response = self._make_api_request(url, headers=headers, cache=False)
+            if response and response.get("id"):
+                logger.info(f"Fetched Spotify album: {response.get('name')} by {response.get('artists', [{}])[0].get('name')}")
+                return response
+        except Exception as e:
+            logger.warning(f"Error fetching Spotify album {album_id}: {e}")
+        
+        return None
+    
+    def _get_spotify_artist_by_id(self, artist_id: str) -> Optional[Dict]:
+        """Fetch full artist metadata from Spotify API by ID."""
+        access_token = self._get_spotify_access_token()
+        if not access_token:
+            return None
+        
+        url = f"https://api.spotify.com/v1/artists/{artist_id}"
+        headers = {"Authorization": f"Bearer {access_token}"}
+        
+        try:
+            response = self._make_api_request(url, headers=headers, cache=False)
+            if response and response.get("id"):
+                logger.info(f"Fetched Spotify artist: {response.get('name')}")
+                return response
+        except Exception as e:
+            logger.warning(f"Error fetching Spotify artist {artist_id}: {e}")
+        
+        return None
+    
+    def _extract_external_ids(self, spotify_data: Dict) -> Dict[str, Optional[str]]:
+        """
+        Extract external IDs (ISRC, UPC, EAN) from Spotify response.
+        
+        Returns: {"isrc": "...", "upc": "...", "ean": "..."}
+        """
+        external_ids = {}
+        
+        # For tracks, external_ids is directly available
+        if "external_ids" in spotify_data:
+            ext = spotify_data["external_ids"]
+            external_ids["isrc"] = ext.get("isrc")
+            external_ids["upc"] = ext.get("upc")
+            external_ids["ean"] = ext.get("ean")
+        
+        # For albums, external_ids is also directly available
+        elif "type" in spotify_data and spotify_data["type"] == "album":
+            ext = spotify_data.get("external_ids", {})
+            external_ids["isrc"] = ext.get("isrc")
+            external_ids["upc"] = ext.get("upc")
+            external_ids["ean"] = ext.get("ean")
+        
+        return external_ids
+    
     def search_labels(self, name: str, limit: int = 5) -> List[Dict]:
         """Search for labels by name."""
         try:
@@ -893,16 +1108,44 @@ class NotionMusicBrainzSync:
         self._location_cache = None  # Cache location name -> page_id (None = not loaded, {} = loaded empty)
         self._locations_title_key = None  # Cache title property key for locations
         self._database_pages_cache = {}  # Cache full database queries
+        self._artist_mbid_map = {}
+        self._album_mbid_map = {}
+        self._song_mbid_map = {}
+        self._label_mbid_map = {}
         
         # Load database schemas
         if self.artists_db_id:
             self._load_artists_schema()
+            self._artist_mbid_map = self._build_mbid_cache(
+                self.artists_db_id,
+                self.artists_properties.get('musicbrainz_id'),
+                self.artists_property_id_to_key,
+                'artist',
+            )
         if self.albums_db_id:
             self._load_albums_schema()
+            self._album_mbid_map = self._build_mbid_cache(
+                self.albums_db_id,
+                self.albums_properties.get('musicbrainz_id'),
+                self.albums_property_id_to_key,
+                'album',
+            )
         if self.songs_db_id:
             self._load_songs_schema()
+            self._song_mbid_map = self._build_mbid_cache(
+                self.songs_db_id,
+                self.songs_properties.get('musicbrainz_id'),
+                self.songs_property_id_to_key,
+                'song',
+            )
         if self.labels_db_id:
             self._load_labels_schema()
+            self._label_mbid_map = self._build_mbid_cache(
+                self.labels_db_id,
+                self.labels_properties.get('musicbrainz_id'),
+                self.labels_property_id_to_key,
+                'label',
+            )
     
     def _load_artists_schema(self):
         """Load and analyze the Artists database schema."""
@@ -1096,7 +1339,90 @@ class NotionMusicBrainzSync:
             return self.labels_property_id_to_key.get(property_id)
         return None
     
-    def sync_artist_page(self, page: Dict, force_all: bool = False) -> Optional[bool]:
+    def _get_database_pages(self, database_id: str) -> List[Dict]:
+        """Return cached pages for a database (querying Notion once per run)."""
+        if database_id in self._database_pages_cache:
+            return self._database_pages_cache[database_id]
+        pages = self.notion.query_database(database_id)
+        self._database_pages_cache[database_id] = pages
+        return pages
+
+    @staticmethod
+    def _normalize_mbid(mbid: Optional[str]) -> Optional[str]:
+        if not mbid:
+            return None
+        return mbid.strip().lower()
+
+    @staticmethod
+    def _extract_rich_text_plain(prop: Optional[Dict]) -> Optional[str]:
+        if not prop:
+            return None
+        rich_text = prop.get('rich_text')
+        if not rich_text:
+            return None
+        first = rich_text[0]
+        return first.get('plain_text') or first.get('text', {}).get('content')
+
+    def _build_mbid_cache(
+        self,
+        database_id: Optional[str],
+        mbid_property_id: Optional[str],
+        property_id_to_key: Dict[str, str],
+        entity_name: str,
+    ) -> Dict[str, str]:
+        """Create a {mbid -> page_id} cache for the specified database."""
+        if not database_id or not mbid_property_id:
+            return {}
+        property_key = property_id_to_key.get(mbid_property_id)
+        if not property_key:
+            logger.warning("Skipping %s MBID cache; property %s missing in schema", entity_name, mbid_property_id)
+            return {}
+        pages = self._get_database_pages(database_id)
+        cache: Dict[str, str] = {}
+        for page in pages:
+            page_id = page.get('id')
+            mbid_prop = page.get('properties', {}).get(property_key)
+            mbid = self._normalize_mbid(self._extract_rich_text_plain(mbid_prop))
+            if mbid and page_id:
+                cache[mbid] = page_id
+        if cache:
+            logger.debug("Cached %d %s MBIDs", len(cache), entity_name)
+        return cache
+
+    def _register_mbid(self, cache: Dict[str, str], mbid: Optional[str], page_id: Optional[str]):
+        normalized = self._normalize_mbid(mbid)
+        if normalized and page_id:
+            cache[normalized] = page_id
+
+    def _persist_mbid_on_page(
+        self,
+        database: str,
+        page: Optional[Dict],
+        page_id: str,
+        mbid: Optional[str],
+        property_id: Optional[str],
+        cache: Dict[str, str],
+    ):
+        normalized = self._normalize_mbid(mbid)
+        if not normalized or not property_id:
+            return
+        prop_key = self._get_property_key(property_id, database)
+        if not prop_key:
+            return
+        existing_prop = page.get('properties', {}).get(prop_key) if page else None
+        current_value = self._normalize_mbid(self._extract_rich_text_plain(existing_prop))
+        if current_value == normalized:
+            cache[normalized] = page_id
+            return
+        update_payload = {
+            prop_key: {
+                'rich_text': [{'text': {'content': mbid}}],
+            }
+        }
+        if self.notion.update_page(page_id, update_payload):
+            cache[normalized] = page_id
+    
+    def sync_artist_page(self, page: Dict, force_all: bool = False, spotify_url: str = None) -> Optional[bool]:
         """Sync a single artist page with MusicBrainz data."""
         try:
             page_id = page['id']
@@ -1132,8 +1458,46 @@ class NotionMusicBrainzSync:
                     if mb_id_prop.get('rich_text') and mb_id_prop['rich_text']:
                         existing_mbid = mb_id_prop['rich_text'][0]['plain_text']
             
+            # Check for Spotify URL (dual-purpose: input and output)
+            spotify_url_from_notion = None
+            spotify_prop_id = self.artists_properties.get('streaming_link')  # Spotify property
+            if spotify_prop_id:
+                spotify_key = self._get_property_key(spotify_prop_id, 'artists')
+                if spotify_key:
+                    spotify_prop = properties.get(spotify_key, {})
+                    if spotify_prop.get('url'):
+                        spotify_url_from_notion = spotify_prop['url']
+            
+            # Determine which Spotify URL to use
+            active_spotify_url = spotify_url or spotify_url_from_notion
+            spotify_provided_via_input = bool(active_spotify_url)
+            
             # Search or get artist data
             artist_data = None
+            spotify_artist_data = None
+            
+            # Try Spotify URL approach if provided
+            if active_spotify_url and not existing_mbid:
+                logger.info(f"Spotify URL provided: {active_spotify_url}")
+                parsed = self.mb._parse_spotify_url(active_spotify_url)
+                
+                if parsed and parsed['type'] == 'artist':
+                    spotify_artist_data = self.mb._get_spotify_artist_by_id(parsed['id'])
+                    
+                    if spotify_artist_data:
+                        spotify_artist_id = spotify_artist_data.get('id')
+                        # Search MusicBrainz by Spotify ID relationship
+                        artist_data = self.mb.get_artist_by_spotify_id(spotify_artist_id)
+                        
+                        if artist_data:
+                            logger.info(f"Successfully matched artist via Spotify ID: {spotify_artist_id}")
+                        else:
+                            logger.info(f"No MusicBrainz artist found with Spotify ID {spotify_artist_id}, falling back to name search")
+                    else:
+                        logger.warning(f"Could not fetch Spotify artist data, falling back to name search")
+                elif parsed:
+                    logger.warning(f"Spotify URL is not an artist (type: {parsed['type']}), ignoring")
+            
             if existing_mbid:
                 artist_data = self.mb.get_artist(existing_mbid)
                 if not artist_data:
@@ -1159,7 +1523,11 @@ class NotionMusicBrainzSync:
                 return False
             
             # Format properties
-            notion_props = self._format_artist_properties(artist_data)
+            # Skip writing Spotify URL if it was provided as input
+            notion_props = self._format_artist_properties(
+                artist_data,
+                skip_spotify_url=spotify_provided_via_input
+            )
             
             # Preserve existing relations (merge instead of replace)
             notion_props = self._merge_relations(page, notion_props, 'artists')
@@ -1189,7 +1557,7 @@ class NotionMusicBrainzSync:
             logger.error(f"Error syncing artist page {page.get('id')}: {e}")
             return False
     
-    def _format_artist_properties(self, artist_data: Dict) -> Dict:
+    def _format_artist_properties(self, artist_data: Dict, skip_spotify_url: bool = False) -> Dict:
         """Format MusicBrainz artist data for Notion properties."""
         properties = {}
         primary_artist_mbid = None
@@ -1289,8 +1657,8 @@ class NotionMusicBrainzSync:
                     # Bandcamp
                     elif 'bandcamp' in url_resource:
                         bandcamp_url = relation.get('url', {}).get('resource')
-                    # Spotify
-                    elif 'spotify' in url_resource:
+                    # Spotify (only extract if we're allowed to write it)
+                    elif not skip_spotify_url and 'spotify' in url_resource:
                         spotify_url = relation.get('url', {}).get('resource')
             
             # IG Link
@@ -1317,8 +1685,8 @@ class NotionMusicBrainzSync:
                 if prop_key:
                     properties[prop_key] = {'url': bandcamp_url}
             
-            # Streaming Link (Spotify)
-            if spotify_url and self.artists_properties.get('streaming_link'):
+            # Streaming Link (Spotify) - only write if it wasn't provided as input
+            if not skip_spotify_url and spotify_url and self.artists_properties.get('streaming_link'):
                 prop_key = self._get_property_key(self.artists_properties['streaming_link'], 'artists')
                 if prop_key:
                     properties[prop_key] = {'url': spotify_url}
@@ -1362,41 +1730,30 @@ class NotionMusicBrainzSync:
                         'rich_text': [{'text': {'content': artist_data['disambiguation']}}]
                     }
             
-            # Genres - use only genres directly from the artist (not from release-groups)
-            # This matches what MusicBrainz shows on the artist page
-            if artist_data.get('genres') and self.artists_properties.get('genres'):
-                genres = [genre['name'] for genre in artist_data['genres'] if genre.get('name')]
-                if genres:
-                    prop_key = self._get_property_key(self.artists_properties['genres'], 'artists')
-                    if prop_key:
-                        properties[prop_key] = {
-                            'multi_select': [{'name': genre} for genre in genres[:10]]  # Limit to 10 genres
-                        }
-            
-            # Tags - these are separate from genres and come directly from the artist
-            # Only include tags that are different from genres (genres have priority)
-            if artist_data.get('tags') and self.artists_properties.get('tags'):
-                # Get genre names for comparison
-                genre_names = set()
-                if artist_data.get('genres'):
-                    genre_names = {genre['name'] for genre in artist_data['genres'] if genre.get('name')}
-                
-                # Filter tags: exclude tags that match genres (genres have priority)
-                tags = []
-                for tag in artist_data['tags']:
-                    tag_name = tag.get('name')
-                    # Only include tags that:
-                    # 1. Have a name
-                    # 2. Are different from genres (genres take priority)
-                    if tag_name and tag_name not in genre_names:
-                        tags.append(tag_name)
-                
-                if tags:
-                    prop_key = self._get_property_key(self.artists_properties['tags'], 'artists')
-                    if prop_key:
-                        properties[prop_key] = {
-                            'multi_select': [{'name': tag} for tag in tags[:10]]  # Limit to 10 tags
-                        }
+            # Genres + tags - consolidate everything into the Genres property for artists
+            if self.artists_properties.get('genres'):
+                prop_key = self._get_property_key(self.artists_properties['genres'], 'artists')
+                if prop_key:
+                    genre_candidates = []
+                    if artist_data.get('genres'):
+                        genre_candidates.extend(
+                            genre['name']
+                            for genre in artist_data['genres']
+                            if isinstance(genre, dict) and genre.get('name')
+                        )
+                    if artist_data.get('tags'):
+                        genre_candidates.extend(
+                            tag['name']
+                            for tag in artist_data['tags']
+                            if isinstance(tag, dict) and tag.get('name')
+                        )
+                    genre_options = build_multi_select_options(
+                        genre_candidates,
+                        limit=10,
+                        context='artist genres',
+                    )
+                    if genre_options:
+                        properties[prop_key] = {'multi_select': genre_options}
             
             # MusicBrainz URL
             if artist_data.get('id') and self.artists_properties.get('musicbrainz_url'):
@@ -2055,7 +2412,7 @@ class NotionMusicBrainzSync:
         except Exception:
             return None
     
-    def sync_album_page(self, page: Dict, force_all: bool = False) -> Optional[bool]:
+    def sync_album_page(self, page: Dict, force_all: bool = False, spotify_url: str = None) -> Optional[bool]:
         """Sync a single album page with MusicBrainz data."""
         try:
             page_id = page['id']
@@ -2153,6 +2510,20 @@ class NotionMusicBrainzSync:
                     if mb_id_prop.get('rich_text') and mb_id_prop['rich_text']:
                         existing_mbid = mb_id_prop['rich_text'][0]['plain_text']
             
+            # Check for Spotify URL (dual-purpose: input and output)
+            spotify_url_from_notion = None
+            spotify_prop_id = self.albums_properties.get('listen')  # Spotify property
+            if spotify_prop_id:
+                spotify_key = self._get_property_key(spotify_prop_id, 'albums')
+                if spotify_key:
+                    spotify_prop = properties.get(spotify_key, {})
+                    if spotify_prop.get('url'):
+                        spotify_url_from_notion = spotify_prop['url']
+            
+            # Determine which Spotify URL to use
+            active_spotify_url = spotify_url or spotify_url_from_notion
+            spotify_provided_via_input = bool(active_spotify_url)
+            
             # Search or get release data
             release_data = None
             if existing_mbid:
@@ -2180,6 +2551,36 @@ class NotionMusicBrainzSync:
                         # No related songs to verify, skip if force_all is False
                         logger.info(f"Skipping album '{title}' - already has MBID {existing_mbid} (use --force-all to update)")
                         return None
+            
+            spotify_album_data = None
+            # Try Spotify URL approach if provided
+            if active_spotify_url and not existing_mbid:
+                logger.info(f"Spotify URL provided: {active_spotify_url}")
+                parsed = self.mb._parse_spotify_url(active_spotify_url)
+                
+                if parsed and parsed['type'] == 'album':
+                    spotify_album_data = self.mb._get_spotify_album_by_id(parsed['id'])
+                    
+                    if spotify_album_data:
+                        # Extract UPC/EAN from Spotify data
+                        external_ids = self.mb._extract_external_ids(spotify_album_data)
+                        barcode = external_ids.get('upc') or external_ids.get('ean')
+                        
+                        if barcode:
+                            logger.info(f"Found barcode from Spotify: {barcode}")
+                            # Search MusicBrainz by barcode
+                            release_data = self.mb.search_release_by_barcode(barcode)
+                            
+                            if release_data:
+                                logger.info(f"Successfully matched release via Spotify barcode: {barcode}")
+                            else:
+                                logger.info(f"No MusicBrainz match for barcode {barcode}, falling back to name search")
+                        else:
+                            logger.info("Spotify album has no barcode, falling back to name search")
+                    else:
+                        logger.warning(f"Could not fetch Spotify album data, falling back to name search")
+                elif parsed:
+                    logger.warning(f"Spotify URL is not an album (type: {parsed['type']}), ignoring")
             
             if not release_data:
                 # New approach: Use related artist or song MBID to get candidate releases
@@ -2320,7 +2721,11 @@ class NotionMusicBrainzSync:
                 return False
             
             # Format properties
-            notion_props = self._format_album_properties(release_data)
+            # Skip writing Spotify URL if it was provided as input
+            notion_props = self._format_album_properties(
+                release_data,
+                skip_spotify_url=spotify_provided_via_input
+            )
             
             # Preserve existing relations (merge instead of replace)
             notion_props = self._merge_relations(page, notion_props, 'albums')
@@ -2358,7 +2763,7 @@ class NotionMusicBrainzSync:
             logger.error(f"Error syncing album page {page.get('id')}: {e}")
             return False
     
-    def _format_album_properties(self, release_data: Dict) -> Dict:
+    def _format_album_properties(self, release_data: Dict, skip_spotify_url: bool = False) -> Dict:
         """Format MusicBrainz release data for Notion properties."""
         properties = {}
         
@@ -2477,9 +2882,12 @@ class NotionMusicBrainzSync:
                 if formats:
                     prop_key = self._get_property_key(self.albums_properties['format'], 'albums')
                     if prop_key:
-                        properties[prop_key] = {
-                            'multi_select': [{'name': fmt} for fmt in set(formats)]
-                        }
+                        format_options = build_multi_select_options(
+                            formats,
+                            context='album formats',
+                        )
+                        if format_options:
+                            properties[prop_key] = {'multi_select': format_options}
             
             # Track count
             if release_data.get('media') and self.albums_properties.get('track_count'):
@@ -2489,70 +2897,43 @@ class NotionMusicBrainzSync:
                     if prop_key:
                         properties[prop_key] = {'number': total_tracks}
             
-            # Genres - prefer explicit release-group genres, fall back to release-level genres,
-            # and finally to release-group tags if MusicBrainz only surfaced genres there.
-            genres = []
+            # Genres/Tags combination for albums
             release_group = release_data.get('release-group') or {}
-            if release_group.get('genres'):
-                genres.extend(
-                    genre['name']
-                    for genre in release_group['genres']
-                    if isinstance(genre, dict) and genre.get('name')
-                )
-            if release_data.get('genres'):
-                genres.extend(
-                    genre['name']
-                    for genre in release_data['genres']
-                    if isinstance(genre, dict) and genre.get('name')
-                )
-            if not genres and release_group.get('tags'):
-                # Some releases only expose genres as tags in the release-group payload.
-                genres.extend(
-                    tag['name']
-                    for tag in release_group['tags']
-                    if isinstance(tag, dict) and tag.get('name')
-                )
-            
-            # Deduplicate while preserving priority order, then limit to 10 entries
-            deduped_genres = []
-            seen_genres = set()
-            for genre_name in genres:
-                if genre_name and genre_name not in seen_genres:
-                    deduped_genres.append(genre_name)
-                    seen_genres.add(genre_name)
-            if deduped_genres and self.albums_properties.get('genres'):
+            if self.albums_properties.get('genres'):
                 prop_key = self._get_property_key(self.albums_properties['genres'], 'albums')
                 if prop_key:
-                    properties[prop_key] = {
-                        'multi_select': [{'name': genre} for genre in deduped_genres[:10]]
-                    }
-            
-            # Tags - treat as secondary labels once genres have been assigned
-            tag_sources = []
-            release_tags = release_data.get('tags') or []
-            if release_tags:
-                tag_sources.append(release_tags)
-            release_group_tags = release_group.get('tags') or []
-            if release_group_tags:
-                tag_sources.append(release_group_tags)
-            
-            if tag_sources and self.albums_properties.get('tags'):
-                tags = []
-                seen_tags = set(deduped_genres)  # prevent genre/tag duplication
-                for tag_set in tag_sources:
-                    for tag in tag_set:
-                        if not isinstance(tag, dict):
-                            continue
-                        tag_name = tag.get('name')
-                        if tag_name and tag_name not in seen_tags:
-                            tags.append(tag_name)
-                            seen_tags.add(tag_name)
-                if tags:
-                    prop_key = self._get_property_key(self.albums_properties['tags'], 'albums')
-                    if prop_key:
-                        properties[prop_key] = {
-                            'multi_select': [{'name': tag} for tag in tags[:10]]
-                        }
+                    genre_candidates = []
+                    if release_group.get('genres'):
+                        genre_candidates.extend(
+                            genre['name']
+                            for genre in release_group['genres']
+                            if isinstance(genre, dict) and genre.get('name')
+                        )
+                    if release_data.get('genres'):
+                        genre_candidates.extend(
+                            genre['name']
+                            for genre in release_data['genres']
+                            if isinstance(genre, dict) and genre.get('name')
+                        )
+                    if release_group.get('tags'):
+                        genre_candidates.extend(
+                            tag['name']
+                            for tag in release_group['tags']
+                            if isinstance(tag, dict) and tag.get('name')
+                        )
+                    if release_data.get('tags'):
+                        genre_candidates.extend(
+                            tag['name']
+                            for tag in release_data['tags']
+                            if isinstance(tag, dict) and tag.get('name')
+                        )
+                    genre_options = build_multi_select_options(
+                        genre_candidates,
+                        limit=10,
+                        context='album genres',
+                    )
+                    if genre_options:
+                        properties[prop_key] = {'multi_select': genre_options}
             
             # Album Type (from release-group primary-type)
             if release_data.get('release-group') and release_data['release-group'].get('primary-type') and self.albums_properties.get('type'):
@@ -2562,41 +2943,43 @@ class NotionMusicBrainzSync:
                     properties[prop_key] = {'select': {'name': album_type}}
             
             # Spotify link (from url-rels) - check for both "streaming" and "free streaming"
-            spotify_url = None
-            if release_data.get('relations') and self.albums_properties.get('listen'):
-                for relation in release_data.get('relations', []):
-                    relation_type = relation.get('type', '').lower()
-                    # Check for both "streaming" and "free streaming" relation types
-                    if relation_type in ['streaming', 'free streaming']:
-                        url_resource = relation.get('url', {})
-                        if isinstance(url_resource, dict):
-                            url_str = url_resource.get('resource', '')
-                        else:
-                            url_str = str(url_resource)
-                        
-                        # Check if it's a Spotify URL
-                        if url_str and 'spotify' in url_str.lower() and 'spotify.com' in url_str.lower():
-                            spotify_url = url_str
-                            break
-            
-            # If no Spotify link found in MusicBrainz, try searching Spotify directly
-            if not spotify_url and self.albums_properties.get('listen'):
-                album_title = release_data.get('title', '')
-                artist_name = None
-                # Get artist name from artist-credit
-                if release_data.get('artist-credit') and release_data['artist-credit']:
-                    first_artist = release_data['artist-credit'][0].get('artist', {})
-                    artist_name = first_artist.get('name')
+            # Only write Spotify URL if it wasn't provided as input
+            if not skip_spotify_url:
+                spotify_url = None
+                if release_data.get('relations') and self.albums_properties.get('listen'):
+                    for relation in release_data.get('relations', []):
+                        relation_type = relation.get('type', '').lower()
+                        # Check for both "streaming" and "free streaming" relation types
+                        if relation_type in ['streaming', 'free streaming']:
+                            url_resource = relation.get('url', {})
+                            if isinstance(url_resource, dict):
+                                url_str = url_resource.get('resource', '')
+                            else:
+                                url_str = str(url_resource)
+                            
+                            # Check if it's a Spotify URL
+                            if url_str and 'spotify' in url_str.lower() and 'spotify.com' in url_str.lower():
+                                spotify_url = url_str
+                                break
                 
-                if album_title:
-                    spotify_url = self.mb._get_spotify_album_url(album_title, artist_name)
-                    if spotify_url:
-                        logger.debug(f"Found Spotify URL via API search: {spotify_url}")
-            
-            if spotify_url:
-                prop_key = self._get_property_key(self.albums_properties['listen'], 'albums')
-                if prop_key:
-                    properties[prop_key] = {'url': spotify_url}
+                # If no Spotify link found in MusicBrainz, try searching Spotify directly
+                if not spotify_url and self.albums_properties.get('listen'):
+                    album_title = release_data.get('title', '')
+                    artist_name = None
+                    # Get artist name from artist-credit
+                    if release_data.get('artist-credit') and release_data['artist-credit']:
+                        first_artist = release_data['artist-credit'][0].get('artist', {})
+                        artist_name = first_artist.get('name')
+                    
+                    if album_title:
+                        spotify_url = self.mb._get_spotify_album_url(album_title, artist_name)
+                        if spotify_url:
+                            logger.debug(f"Found Spotify URL via API search: {spotify_url}")
+                
+                if spotify_url:
+                    prop_key = self._get_property_key(self.albums_properties['listen'], 'albums')
+                    if prop_key:
+                        properties[prop_key] = {'url': spotify_url}
             
             # MusicBrainz URL
             if release_data.get('id') and self.albums_properties.get('musicbrainz_url'):
@@ -2622,8 +3005,14 @@ class NotionMusicBrainzSync:
             return None
         
         try:
-            # First, try to find existing artist by name
+            normalized_mbid = self._normalize_mbid(artist_mbid)
+            if normalized_mbid:
+                cached_page = self._artist_mbid_map.get(normalized_mbid)
+                if cached_page:
+                    return cached_page
+            
             title_prop_id = self.artists_properties.get('title')
+            mbid_prop_id = self.artists_properties.get('musicbrainz_id')
             if not title_prop_id:
                 return None
             
@@ -2631,66 +3020,92 @@ class NotionMusicBrainzSync:
             if not title_key:
                 return None
             
-            # Search for existing artist page by title
             filter_params = {
                 'property': title_key,
-                'title': {
-                    'equals': artist_name
-                }
+                'title': {'equals': artist_name},
             }
-            
             existing_pages = self.notion.query_database(self.artists_db_id, filter_params)
-            
             if existing_pages:
-                # Found existing artist
-                return existing_pages[0]['id']
+                page = existing_pages[0]
+                page_id = page['id']
+                if normalized_mbid:
+                    self._persist_mbid_on_page(
+                        'artists',
+                        page,
+                        page_id,
+                        artist_mbid,
+                        mbid_prop_id,
+                        self._artist_mbid_map,
+                    )
+                else:
+                    mbid_prop_key = self._get_property_key(mbid_prop_id, 'artists')
+                    if mbid_prop_key:
+                        existing_mbid = self._extract_rich_text_plain(page['properties'].get(mbid_prop_key))
+                        self._register_mbid(self._artist_mbid_map, existing_mbid, page_id)
+                return page_id
             
-            # If no exact match, try searching all pages and match by name (case-insensitive)
-            all_pages = self.notion.query_database(self.artists_db_id)
+            # Case-insensitive fallback
+            all_pages = self._get_database_pages(self.artists_db_id)
             for page in all_pages:
                 page_props = page.get('properties', {})
                 page_title_prop = page_props.get(title_key, {})
                 if page_title_prop.get('title') and page_title_prop['title']:
                     page_title = page_title_prop['title'][0]['plain_text']
                     if page_title.lower() == artist_name.lower():
-                        return page['id']
+                        page_id = page['id']
+                        if normalized_mbid:
+                            self._persist_mbid_on_page(
+                                'artists',
+                                page,
+                                page_id,
+                                artist_mbid,
+                                mbid_prop_id,
+                                self._artist_mbid_map,
+                            )
+                        else:
+                            mbid_prop_key = self._get_property_key(mbid_prop_id, 'artists')
+                            if mbid_prop_key:
+                                existing_mbid = self._extract_rich_text_plain(page_props.get(mbid_prop_key))
+                                self._register_mbid(self._artist_mbid_map, existing_mbid, page_id)
+                        return page_id
             
             # Artist doesn't exist - create it
             logger.info(f"Creating new artist page: {artist_name}")
             
-            # Get artist data from MusicBrainz if we have MBID
             artist_data = None
             if artist_mbid:
                 artist_data = self.mb.get_artist(artist_mbid)
             
-            # Format properties for new artist
-            artist_props = {}
-            artist_props[title_key] = {
-                'title': [{'text': {'content': artist_name}}]
+            artist_props = {
+                title_key: {'title': [{'text': {'content': artist_name}}]}
             }
             
-            # Add MusicBrainz ID if available
-            if artist_data and artist_data.get('id') and self.artists_properties.get('musicbrainz_id'):
+            mbid_to_store = None
+            if artist_data and artist_data.get('id'):
+                mbid_to_store = artist_data['id']
+            elif artist_mbid:
+                mbid_to_store = artist_mbid
+            
+            if mbid_to_store and self.artists_properties.get('musicbrainz_id'):
                 mb_id_key = self._get_property_key(self.artists_properties['musicbrainz_id'], 'artists')
                 if mb_id_key:
                     artist_props[mb_id_key] = {
-                        'rich_text': [{'text': {'content': artist_data['id']}}]
+                        'rich_text': [{'text': {'content': mbid_to_store}}]
                     }
             
-            # Create the artist page
             artist_page_id = self.notion.create_page(
                 self.artists_db_id,
                 artist_props,
                 None,
-                '🎤'  # Microphone emoji
+                '🎤',
             )
             
             if artist_page_id:
                 logger.info(f"Created artist page: {artist_name} (ID: {artist_page_id})")
-                # If we have full artist data, update the page with it
                 if artist_data:
                     full_props = self._format_artist_properties(artist_data)
                     self.notion.update_page(artist_page_id, full_props)
+                self._register_mbid(self._artist_mbid_map, mbid_to_store, artist_page_id)
             
             return artist_page_id
             
@@ -2865,8 +3280,15 @@ class NotionMusicBrainzSync:
             return None
         
         try:
+            normalized_mbid = self._normalize_mbid(album_mbid)
+            if normalized_mbid:
+                cached_page = self._album_mbid_map.get(normalized_mbid)
+                if cached_page:
+                    return cached_page
+            
             # First, try to find existing album by title
             title_prop_id = self.albums_properties.get('title')
+            mbid_prop_id = self.albums_properties.get('musicbrainz_id')
             if not title_prop_id:
                 return None
             
@@ -2885,7 +3307,8 @@ class NotionMusicBrainzSync:
             existing_pages = self.notion.query_database(self.albums_db_id, filter_params)
             
             if existing_pages:
-                album_page_id = existing_pages[0]['id']
+                page = existing_pages[0]
+                album_page_id = page['id']
                 if album_mbid:
                     album_data = self.mb.get_release(album_mbid)
                     if album_data:
@@ -2893,16 +3316,40 @@ class NotionMusicBrainzSync:
                         if cover_url:
                             logger.info(f"Updating cover image for existing album page '{album_title}'")
                             self.notion.update_page(album_page_id, {}, cover_url)
+                if normalized_mbid:
+                    self._persist_mbid_on_page(
+                        'albums',
+                        page,
+                        album_page_id,
+                        album_mbid,
+                        mbid_prop_id,
+                        self._album_mbid_map,
+                    )
                 return album_page_id
             
             # If no exact match, try searching all pages and match by name (case-insensitive)
-            all_pages = self.notion.query_database(self.albums_db_id)
+            all_pages = self._get_database_pages(self.albums_db_id)
             for page in all_pages:
                 page_props = page.get('properties', {})
                 page_title_prop = page_props.get(title_key, {})
                 if page_title_prop.get('title') and page_title_prop['title']:
                     page_title = page_title_prop['title'][0]['plain_text']
                     if page_title.lower() == album_title.lower():
+                        page_id = page['id']
+                        if normalized_mbid:
+                            self._persist_mbid_on_page(
+                                'albums',
+                                page,
+                                page_id,
+                                album_mbid,
+                                mbid_prop_id,
+                                self._album_mbid_map,
+                            )
+                        else:
+                            mbid_prop_key = self._get_property_key(mbid_prop_id, 'albums')
+                            if mbid_prop_key:
+                                existing_mbid = self._extract_rich_text_plain(page_props.get(mbid_prop_key))
+                                self._register_mbid(self._album_mbid_map, existing_mbid, page_id)
                         return page['id']
             
             # Album doesn't exist - create it
@@ -2919,18 +3366,20 @@ class NotionMusicBrainzSync:
                 'title': [{'text': {'content': album_title}}]
             }
             
-            # Add MusicBrainz ID if available
-            if album_data and album_data.get('id') and self.albums_properties.get('musicbrainz_id'):
+            mbid_to_store = None
+            if album_data and album_data.get('id'):
+                mbid_to_store = album_data['id']
+            elif album_mbid:
+                mbid_to_store = album_mbid
+            
+            if mbid_to_store and self.albums_properties.get('musicbrainz_id'):
                 mb_id_key = self._get_property_key(self.albums_properties['musicbrainz_id'], 'albums')
                 if mb_id_key:
                     album_props[mb_id_key] = {
-                        'rich_text': [{'text': {'content': album_data['id']}}]
+                        'rich_text': [{'text': {'content': mbid_to_store}}]
                     }
             
             cover_url = self._get_album_cover_url(album_data) if album_data else None
-            cover_url = None
-            if album_data and album_data.get('id'):
-                cover_url = self._get_album_cover_url(album_data)
             
             # Create the album page
             album_page_id = self.notion.create_page(
@@ -2946,6 +3395,7 @@ class NotionMusicBrainzSync:
                 if album_data:
                     full_props = self._format_album_properties(album_data)
                     self.notion.update_page(album_page_id, full_props, cover_url)
+                self._register_mbid(self._album_mbid_map, mbid_to_store, album_page_id)
             
             return album_page_id
             
@@ -2959,8 +3409,15 @@ class NotionMusicBrainzSync:
             return None
         
         try:
+            normalized_mbid = self._normalize_mbid(label_mbid)
+            if normalized_mbid:
+                cached_page = self._label_mbid_map.get(normalized_mbid)
+                if cached_page:
+                    return cached_page
+            
             # First, try to find existing label by name
             title_prop_id = self.labels_properties.get('title')
+            mbid_prop_id = self.labels_properties.get('musicbrainz_id')
             if not title_prop_id:
                 return None
             
@@ -2979,17 +3436,47 @@ class NotionMusicBrainzSync:
             existing_pages = self.notion.query_database(self.labels_db_id, filter_params)
             
             if existing_pages:
-                # Found existing label
-                return existing_pages[0]['id']
+                page = existing_pages[0]
+                page_id = page['id']
+                if normalized_mbid:
+                    self._persist_mbid_on_page(
+                        'labels',
+                        page,
+                        page_id,
+                        label_mbid,
+                        mbid_prop_id,
+                        self._label_mbid_map,
+                    )
+                else:
+                    mbid_prop_key = self._get_property_key(mbid_prop_id, 'labels')
+                    if mbid_prop_key:
+                        existing_mbid = self._extract_rich_text_plain(page['properties'].get(mbid_prop_key))
+                        self._register_mbid(self._label_mbid_map, existing_mbid, page_id)
+                return page_id
             
             # If no exact match, try searching all pages and match by name (case-insensitive)
-            all_pages = self.notion.query_database(self.labels_db_id)
+            all_pages = self._get_database_pages(self.labels_db_id)
             for page in all_pages:
                 page_props = page.get('properties', {})
                 page_title_prop = page_props.get(title_key, {})
                 if page_title_prop.get('title') and page_title_prop['title']:
                     page_title = page_title_prop['title'][0]['plain_text']
                     if page_title.lower() == label_name.lower():
+                        page_id = page['id']
+                        if normalized_mbid:
+                            self._persist_mbid_on_page(
+                                'labels',
+                                page,
+                                page_id,
+                                label_mbid,
+                                mbid_prop_id,
+                                self._label_mbid_map,
+                            )
+                        else:
+                            mbid_prop_key = self._get_property_key(mbid_prop_id, 'labels')
+                            if mbid_prop_key:
+                                existing_mbid = self._extract_rich_text_plain(page_props.get(mbid_prop_key))
+                                self._register_mbid(self._label_mbid_map, existing_mbid, page_id)
                         return page['id']
             
             # Label doesn't exist - create it
@@ -3006,12 +3493,17 @@ class NotionMusicBrainzSync:
                 'title': [{'text': {'content': label_name}}]
             }
             
-            # Add MusicBrainz ID if available
-            if label_data and label_data.get('id') and self.labels_properties.get('musicbrainz_id'):
+            mbid_to_store = None
+            if label_data and label_data.get('id'):
+                mbid_to_store = label_data['id']
+            elif label_mbid:
+                mbid_to_store = label_mbid
+            
+            if mbid_to_store and self.labels_properties.get('musicbrainz_id'):
                 mb_id_key = self._get_property_key(self.labels_properties['musicbrainz_id'], 'labels')
                 if mb_id_key:
                     label_props[mb_id_key] = {
-                        'rich_text': [{'text': {'content': label_data['id']}}]
+                        'rich_text': [{'text': {'content': mbid_to_store}}]
                     }
             
             # Create the label page
@@ -3028,6 +3520,7 @@ class NotionMusicBrainzSync:
                 if label_data:
                     full_props = self._format_label_properties(label_data)
                     self.notion.update_page(label_page_id, full_props)
+                self._register_mbid(self._label_mbid_map, mbid_to_store, label_page_id)
             
             return label_page_id
             
@@ -3129,7 +3622,7 @@ class NotionMusicBrainzSync:
             logger.error(f"Error finding/creating location page for '{location_name}': {e}")
             return None
     
-    def sync_song_page(self, page: Dict, force_all: bool = False) -> Optional[bool]:
+    def sync_song_page(self, page: Dict, force_all: bool = False, spotify_url: str = None) -> Optional[bool]:
         """Sync a single song page with MusicBrainz data."""
         try:
             page_id = page['id']
@@ -3219,12 +3712,58 @@ class NotionMusicBrainzSync:
                     if mb_id_prop.get('rich_text') and mb_id_prop['rich_text']:
                         existing_mbid = mb_id_prop['rich_text'][0]['plain_text']
             
+            # Check for Spotify URL (dual-purpose: input and output)
+            # Priority: CLI parameter > Notion property
+            spotify_url_from_notion = None
+            spotify_prop_id = self.songs_properties.get('listen')  # Spotify property
+            if spotify_prop_id:
+                spotify_key = self._get_property_key(spotify_prop_id, 'songs')
+                if spotify_key:
+                    spotify_prop = properties.get(spotify_key, {})
+                    if spotify_prop.get('url'):
+                        spotify_url_from_notion = spotify_prop['url']
+            
+            # Determine which Spotify URL to use (parameter takes priority)
+            active_spotify_url = spotify_url or spotify_url_from_notion
+            spotify_provided_via_input = bool(active_spotify_url)
+            
             # Search or get recording data
             recording_data = None
             matched_release = None
             matched_track = None
             release_group_used = False
             search_limit = 50
+            spotify_track_data = None
+            
+            # Try Spotify URL approach if provided
+            if active_spotify_url and not existing_mbid:
+                logger.info(f"Spotify URL provided: {active_spotify_url}")
+                parsed = self.mb._parse_spotify_url(active_spotify_url)
+                
+                if parsed and parsed['type'] == 'track':
+                    spotify_track_data = self.mb._get_spotify_track_by_id(parsed['id'])
+                    
+                    if spotify_track_data:
+                        # Extract ISRC from Spotify data
+                        external_ids = self.mb._extract_external_ids(spotify_track_data)
+                        isrc = external_ids.get('isrc')
+                        
+                        if isrc:
+                            logger.info(f"Found ISRC from Spotify: {isrc}")
+                            # Search MusicBrainz by ISRC
+                            recording_data = self.mb.search_recording_by_isrc(isrc)
+                            
+                            if recording_data:
+                                logger.info(f"Successfully matched recording via Spotify ISRC: {isrc}")
+                            else:
+                                logger.info(f"No MusicBrainz match for ISRC {isrc}, falling back to name search")
+                        else:
+                            logger.info("Spotify track has no ISRC, falling back to name search")
+                    else:
+                        logger.warning(f"Could not fetch Spotify track data, falling back to name search")
+                elif parsed:
+                    logger.warning(f"Spotify URL is not a track (type: {parsed['type']}), ignoring")
+            
             if existing_mbid:
                 recording_data = self.mb.get_recording(existing_mbid)
                 if not recording_data:
@@ -3489,7 +4028,13 @@ class NotionMusicBrainzSync:
                 return False
             
             # Format properties
-            notion_props = self._format_song_properties(recording_data, matched_release, matched_track)
+            # Skip writing Spotify URL if it was provided as input (preserve user's input)
+            notion_props = self._format_song_properties(
+                recording_data,
+                matched_release,
+                matched_track,
+                skip_spotify_url=spotify_provided_via_input
+            )
             
             # Preserve existing relations (merge instead of replace)
             notion_props = self._merge_relations(page, notion_props, 'songs')
@@ -3513,7 +4058,8 @@ class NotionMusicBrainzSync:
         self,
         recording_data: Dict,
         preferred_release: Optional[Dict] = None,
-        preferred_track: Optional[Dict] = None
+        preferred_track: Optional[Dict] = None,
+        skip_spotify_url: bool = False
     ) -> Dict:
         """Format MusicBrainz recording data for Notion properties.
         
@@ -3521,6 +4067,7 @@ class NotionMusicBrainzSync:
             recording_data: Recording metadata from MusicBrainz.
             preferred_release: Release data selected via release-group search (if any).
             preferred_track: Track entry from the preferred release (if any).
+            skip_spotify_url: If True, skip writing Spotify URL (because it was user-provided).
         """
         properties = {}
         
@@ -3739,76 +4286,84 @@ class NotionMusicBrainzSync:
                         'rich_text': [{'text': {'content': recording_data['disambiguation']}}]
                     }
             
-            # Genres - from the best release's release-group (same as albums)
-            if best_release and best_release.get('release-group') and best_release['release-group'].get('genres') and self.songs_properties.get('genres'):
-                genres = [genre['name'] for genre in best_release['release-group']['genres'] if genre.get('name')]
-                if genres:
-                    prop_key = self._get_property_key(self.songs_properties['genres'], 'songs')
-                    if prop_key:
-                        properties[prop_key] = {
-                            'multi_select': [{'name': genre} for genre in genres[:10]]  # Limit to 10 genres
-                        }
-            
-            # Tags - filter out tags that match genres (genres have priority)
-            if recording_data.get('tags') and self.songs_properties.get('tags'):
-                # Get genre names for comparison (from best_release if available)
-                genre_names = set()
-                if best_release and best_release.get('release-group') and best_release['release-group'].get('genres'):
-                    genre_names = {genre['name'] for genre in best_release['release-group']['genres'] if genre.get('name')}
-                
-                # Filter tags: exclude tags that match genres (genres have priority)
-                tags = []
-                for tag in recording_data['tags']:
-                    tag_name = tag.get('name')
-                    # Only include tags that:
-                    # 1. Have a name
-                    # 2. Are different from genres (genres take priority)
-                    if tag_name and tag_name not in genre_names:
-                        tags.append(tag_name)
-                
-                if tags:
-                    prop_key = self._get_property_key(self.songs_properties['tags'], 'songs')
-                    if prop_key:
-                        properties[prop_key] = {
-                            'multi_select': [{'name': tag} for tag in tags[:10]]
-                        }
+            # Genres + tags for songs
+            if self.songs_properties.get('genres'):
+                prop_key = self._get_property_key(self.songs_properties['genres'], 'songs')
+                if prop_key:
+                    genre_candidates = []
+                    release_group = None
+                    if best_release and best_release.get('release-group'):
+                        release_group = best_release['release-group']
+                    if release_group and release_group.get('genres'):
+                        genre_candidates.extend(
+                            genre['name']
+                            for genre in release_group['genres']
+                            if isinstance(genre, dict) and genre.get('name')
+                        )
+                    if release_group and release_group.get('tags'):
+                        genre_candidates.extend(
+                            tag['name']
+                            for tag in release_group['tags']
+                            if isinstance(tag, dict) and tag.get('name')
+                        )
+                    if recording_data.get('genres'):
+                        genre_candidates.extend(
+                            genre['name']
+                            for genre in recording_data['genres']
+                            if isinstance(genre, dict) and genre.get('name')
+                        )
+                    if recording_data.get('tags'):
+                        genre_candidates.extend(
+                            tag['name']
+                            for tag in recording_data['tags']
+                            if isinstance(tag, dict) and tag.get('name')
+                        )
+                    genre_options = build_multi_select_options(
+                        genre_candidates,
+                        limit=10,
+                        context='song genres',
+                    )
+                    if genre_options:
+                        properties[prop_key] = {'multi_select': genre_options}
             
             # Spotify link (from url-rels) - check for both "streaming" and "free streaming"
-            spotify_url = None
-            if recording_data.get('relations') and self.songs_properties.get('listen'):
-                for relation in recording_data.get('relations', []):
-                    relation_type = relation.get('type', '').lower()
-                    # Check for both "streaming" and "free streaming" relation types
-                    if relation_type in ['streaming', 'free streaming']:
-                        url_resource = relation.get('url', {})
-                        if isinstance(url_resource, dict):
-                            url_str = url_resource.get('resource', '')
-                        else:
-                            url_str = str(url_resource)
-                        
-                        # Check if it's a Spotify URL
-                        if url_str and 'spotify' in url_str.lower() and 'spotify.com' in url_str.lower():
-                            spotify_url = url_str
-                            break
-            
-            # If no Spotify link found in MusicBrainz, try searching Spotify directly
-            if not spotify_url and self.songs_properties.get('listen'):
-                song_title = recording_data.get('title', '')
-                artist_name = None
-                # Get artist name from artist-credit
-                if recording_data.get('artist-credit') and recording_data['artist-credit']:
-                    first_artist = recording_data['artist-credit'][0].get('artist', {})
-                    artist_name = first_artist.get('name')
+            # Only write Spotify URL if it wasn't provided as input
+            if not skip_spotify_url:
+                spotify_url = None
+                if recording_data.get('relations') and self.songs_properties.get('listen'):
+                    for relation in recording_data.get('relations', []):
+                        relation_type = relation.get('type', '').lower()
+                        # Check for both "streaming" and "free streaming" relation types
+                        if relation_type in ['streaming', 'free streaming']:
+                            url_resource = relation.get('url', {})
+                            if isinstance(url_resource, dict):
+                                url_str = url_resource.get('resource', '')
+                            else:
+                                url_str = str(url_resource)
+                            
+                            # Check if it's a Spotify URL
+                            if url_str and 'spotify' in url_str.lower() and 'spotify.com' in url_str.lower():
+                                spotify_url = url_str
+                                break
                 
-                if song_title:
-                    spotify_url = self.mb._get_spotify_track_url(song_title, artist_name)
-                    if spotify_url:
-                        logger.debug(f"Found Spotify URL via API search: {spotify_url}")
-            
-            if spotify_url:
-                prop_key = self._get_property_key(self.songs_properties['listen'], 'songs')
-                if prop_key:
-                    properties[prop_key] = {'url': spotify_url}
+                # If no Spotify link found in MusicBrainz, try searching Spotify directly
+                if not spotify_url and self.songs_properties.get('listen'):
+                    song_title = recording_data.get('title', '')
+                    artist_name = None
+                    # Get artist name from artist-credit
+                    if recording_data.get('artist-credit') and recording_data['artist-credit']:
+                        first_artist = recording_data['artist-credit'][0].get('artist', {})
+                        artist_name = first_artist.get('name')
+                    
+                    if song_title:
+                        spotify_url = self.mb._get_spotify_track_url(song_title, artist_name)
+                        if spotify_url:
+                            logger.debug(f"Found Spotify URL via API search: {spotify_url}")
+                
+                if spotify_url:
+                    prop_key = self._get_property_key(self.songs_properties['listen'], 'songs')
+                    if prop_key:
+                        properties[prop_key] = {'url': spotify_url}
             
             # MusicBrainz URL
             if recording_data.get('id') and self.songs_properties.get('musicbrainz_url'):
@@ -3968,39 +4523,30 @@ class NotionMusicBrainzSync:
                         'rich_text': [{'text': {'content': label_data['disambiguation']}}]
                     }
             
-            # Genres
-            if label_data.get('genres') and self.labels_properties.get('genres'):
-                genres = [genre['name'] for genre in label_data['genres'] if genre.get('name')]
-                if genres:
-                    prop_key = self._get_property_key(self.labels_properties['genres'], 'labels')
-                    if prop_key:
-                        properties[prop_key] = {
-                            'multi_select': [{'name': genre} for genre in genres[:10]]  # Limit to 10 genres
-                        }
-            
-            # Tags - filter out tags that match genres (genres have priority)
-            if label_data.get('tags') and self.labels_properties.get('tags'):
-                # Get genre names for comparison
-                genre_names = set()
-                if label_data.get('genres'):
-                    genre_names = {genre['name'] for genre in label_data['genres'] if genre.get('name')}
-                
-                # Filter tags: exclude tags that match genres (genres have priority)
-                tags = []
-                for tag in label_data['tags']:
-                    tag_name = tag.get('name')
-                    # Only include tags that:
-                    # 1. Have a name
-                    # 2. Are different from genres (genres take priority)
-                    if tag_name and tag_name not in genre_names:
-                        tags.append(tag_name)
-                
-                if tags:
-                    prop_key = self._get_property_key(self.labels_properties['tags'], 'labels')
-                    if prop_key:
-                        properties[prop_key] = {
-                            'multi_select': [{'name': tag} for tag in tags[:10]]  # Limit to 10 tags
-                        }
+            # Genres + tags for labels
+            if self.labels_properties.get('genres'):
+                prop_key = self._get_property_key(self.labels_properties['genres'], 'labels')
+                if prop_key:
+                    genre_candidates = []
+                    if label_data.get('genres'):
+                        genre_candidates.extend(
+                            genre['name']
+                            for genre in label_data['genres']
+                            if isinstance(genre, dict) and genre.get('name')
+                        )
+                    if label_data.get('tags'):
+                        genre_candidates.extend(
+                            tag['name']
+                            for tag in label_data['tags']
+                            if isinstance(tag, dict) and tag.get('name')
+                        )
+                    genre_options = build_multi_select_options(
+                        genre_candidates,
+                        limit=10,
+                        context='label genres',
+                    )
+                    if genre_options:
+                        properties[prop_key] = {'multi_select': genre_options}
             
             # MusicBrainz URL
             if label_data.get('id') and self.labels_properties.get('musicbrainz_url'):
