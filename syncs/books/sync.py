@@ -492,6 +492,10 @@ class NotionGoogleBooksSync:
             
             # Dynamically find DNS property if not configured
             if not self.property_mapping['dns_property_id']:
+                # Log all property names for debugging
+                all_prop_names = [f"{p.get('name')}({p.get('type')})" for p in properties.values()]
+                logger.info(f"[DNS-DEBUG] Searching for DNS property among {len(properties)} properties: {', '.join(all_prop_names[:10])}...")
+                
                 # #region agent log
                 import json, os
                 try:
@@ -500,15 +504,26 @@ class NotionGoogleBooksSync:
                         f.write(json.dumps({"sessionId":"debug-session","runId":"dns-discovery","hypothesisId":"A,B,D","location":"sync.py:DNS_discovery","message":"Searching for DNS property","data":{"total_properties":len(properties),"property_names":[p.get('name') for p in properties.values()]},"timestamp":int(__import__('time').time()*1000)})+'\n')
                 except: pass
                 # #endregion
+                
+                dns_found = False
                 for prop_key, prop_data in properties.items():
+                    prop_name = prop_data.get('name')
+                    prop_type = prop_data.get('type')
+                    
                     # #region agent log
                     try:
                         with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
-                            f.write(json.dumps({"sessionId":"debug-session","runId":"dns-discovery","hypothesisId":"B,D","location":"sync.py:DNS_check_prop","message":"Checking property","data":{"prop_key":prop_key,"name":prop_data.get('name'),"type":prop_data.get('type'),"matches_name":prop_data.get('name')=='DNS',"is_checkbox":prop_data.get('type')=='checkbox'},"timestamp":int(__import__('time').time()*1000)})+'\n')
+                            f.write(json.dumps({"sessionId":"debug-session","runId":"dns-discovery","hypothesisId":"B,D","location":"sync.py:DNS_check_prop","message":"Checking property","data":{"prop_key":prop_key,"name":prop_name,"type":prop_type,"matches_name":prop_name=='DNS',"is_checkbox":prop_type=='checkbox'},"timestamp":int(__import__('time').time()*1000)})+'\n')
                     except: pass
                     # #endregion
-                    if prop_data.get('name') == 'DNS' and prop_data.get('type') == 'checkbox':
+                    
+                    # Log each checkbox property we find
+                    if prop_type == 'checkbox':
+                        logger.info(f"[DNS-DEBUG] Found checkbox property: '{prop_name}' (key={prop_key})")
+                    
+                    if prop_name == 'DNS' and prop_type == 'checkbox':
                         self.property_mapping['dns_property_id'] = prop_data.get('id')
+                        dns_found = True
                         # #region agent log
                         try:
                             with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
@@ -517,8 +532,10 @@ class NotionGoogleBooksSync:
                         # #endregion
                         logger.info(f"Found DNS checkbox property dynamically: {prop_data.get('id')}")
                         break
+                
                 # #region agent log
-                if not self.property_mapping['dns_property_id']:
+                if not dns_found:
+                    logger.warning(f"[DNS-DEBUG] DNS property NOT found! Available properties: {', '.join(all_prop_names)}")
                     try:
                         with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
                             f.write(json.dumps({"sessionId":"debug-session","runId":"dns-discovery","hypothesisId":"A","location":"sync.py:DNS_not_found","message":"DNS property NOT found after search","data":{"searched_all_properties":True},"timestamp":int(__import__('time').time()*1000)})+'\n')
