@@ -3478,10 +3478,11 @@ class NotionMusicBrainzSync:
                 if album_mbid:
                     album_data = self.mb.get_release(album_mbid)
                     if album_data:
+                        # Format full properties and update the page with all metadata
+                        full_props = self._format_album_properties(album_data)
                         cover_url = self._get_album_cover_url(album_data)
-                        if cover_url:
-                            logger.info(f"Updating cover image for existing album page '{album_title}'")
-                            self.notion.update_page(album_page_id, {}, cover_url)
+                        logger.info(f"Updating existing album page with full metadata: '{album_title}'")
+                        self.notion.update_page(album_page_id, full_props, cover_url)
                 if normalized_mbid:
                     self._persist_mbid_on_page(
                         'albums',
