@@ -5226,11 +5226,18 @@ class NotionMusicBrainzSync:
             artist_page_id = self._find_or_create_artist_page(artist_name, artist_mbid, set_dns=True)
             
             # Set artist cover image from Spotify
+            logger.info(f"[DEBUG] Artist cover: page_id={artist_page_id}, spotify_id={artist_spotify_id}")
             if artist_page_id and artist_spotify_id:
                 artist_cover_url = self.mb._get_spotify_artist_image(artist_name, artist_mbid, artist_spotify_id)
+                logger.info(f"[DEBUG] Fetched artist cover URL: {artist_cover_url[:100] if artist_cover_url else None}")
                 if artist_cover_url:
                     logger.info(f"[DEBUG] Setting artist cover image from Spotify")
                     self.notion.update_page(artist_page_id, {}, artist_cover_url)
+                    logger.info(f"[DEBUG] Artist cover image set successfully")
+                else:
+                    logger.warning(f"[DEBUG] No artist cover URL returned from Spotify")
+            else:
+                logger.warning(f"[DEBUG] Cannot set artist cover: missing page_id or spotify_id")
         
         # Create the song page with DNS=True for Spotify URL flow
         logger.info(f"[TRACK-CREATE] Creating song: {track_name}, mbid={song_mbid}, spotify_url={spotify_url}")
