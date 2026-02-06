@@ -3561,9 +3561,30 @@ class NotionMusicBrainzSync:
         try:
             normalized_mbid = self._normalize_mbid(label_mbid)
             if normalized_mbid:
-                cached_page = self._label_mbid_map.get(normalized_mbid)
-                if cached_page:
-                    return cached_page
+                cached_page_id = self._label_mbid_map.get(normalized_mbid)
+                if cached_page_id:
+                    # Validate that the cached page's name matches the requested name
+                    # This prevents linking to wrong labels when MusicBrainz returns bad data
+                    try:
+                        cached_page = self.notion.get_page(cached_page_id)
+                        if cached_page:
+                            title_prop_id = self.labels_properties.get('title')
+                            title_key = self._get_property_key(title_prop_id, 'labels')
+                            if title_key:
+                                cached_page_title_prop = cached_page.get('properties', {}).get(title_key, {})
+                                if cached_page_title_prop.get('title') and cached_page_title_prop['title']:
+                                    cached_name = cached_page_title_prop['title'][0]['plain_text']
+                                    # Check if names match (case-insensitive)
+                                    if cached_name.lower() == label_name.lower():
+                                        return cached_page_id
+                                    else:
+                                        # Names don't match - MusicBrainz likely returned wrong label for ID
+                                        # Clear the bad MBID and search by name instead
+                                        logger.warning(f"Cached label MBID {normalized_mbid} has name '{cached_name}' but requested name is '{label_name}'. Ignoring bad MBID and searching by name.")
+                                        label_mbid = None
+                                        normalized_mbid = None
+                    except Exception as e:
+                        logger.warning(f"Error validating cached label page: {e}. Proceeding with name search.")
             
             # First, try to find existing label by name
             title_prop_id = self.labels_properties.get('title')
