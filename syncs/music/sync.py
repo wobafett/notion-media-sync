@@ -1193,6 +1193,7 @@ class NotionMusicBrainzSync:
                 'rating': ARTISTS_RATING_PROPERTY_ID,
                 'last_updated': ARTISTS_LAST_UPDATED_PROPERTY_ID,
                 'musicbrainz_url': ARTISTS_MUSICBRAINZ_URL_PROPERTY_ID,
+                'dns': properties.get('DNS', {}).get('id'),
             }
             
             logger.info("✓ Artists database schema loaded")
@@ -1239,6 +1240,7 @@ class NotionMusicBrainzSync:
                 'musicbrainz_url': ALBUMS_MUSICBRAINZ_URL_PROPERTY_ID,
                 'last_updated': ALBUMS_LAST_UPDATED_PROPERTY_ID,
                 'songs': ALBUMS_SONGS_PROPERTY_ID,
+                'dns': properties.get('DNS', {}).get('id'),
             }
             
             logger.info("✓ Albums database schema loaded")
@@ -1279,6 +1281,7 @@ class NotionMusicBrainzSync:
                 'rating': SONGS_RATING_PROPERTY_ID,
                 'musicbrainz_url': SONGS_MUSICBRAINZ_URL_PROPERTY_ID,
                 'last_updated': SONGS_LAST_UPDATED_PROPERTY_ID,
+                'dns': properties.get('DNS', {}).get('id'),
             }
             
             logger.info("✓ Songs database schema loaded")
@@ -1323,6 +1326,7 @@ class NotionMusicBrainzSync:
                 'founded': LABELS_FOUNDED_PROPERTY_ID,
                 'albums': LABELS_ALBUMS_PROPERTY_ID,
                 'area': LABELS_AREA_PROPERTY_ID,
+                'dns': properties.get('DNS', {}).get('id'),
             }
             
             logger.info("✓ Labels database schema loaded")
@@ -1343,6 +1347,61 @@ class NotionMusicBrainzSync:
             return self.songs_property_id_to_key.get(property_id)
         elif database == 'labels':
             return self.labels_property_id_to_key.get(property_id)
+        return None
+    
+    def _fetch_artist_data_by_mbid_or_name(self, artist_name: str, artist_mbid: Optional[str]) -> Optional[Dict]:
+        """Fetch full artist data from MusicBrainz by MBID or name search."""
+        if artist_mbid:
+            artist_data = self.mb.get_artist(artist_mbid)
+            if artist_data:
+                return artist_data
+            logger.warning(f"Could not find artist with MBID {artist_mbid}, falling back to name search")
+        
+        # Fallback to name search
+        search_results = self.mb.search_artists(artist_name, limit=5)
+        if search_results:
+            best_match = search_results[0]
+            return self.mb.get_artist(best_match['id'])
+        
+        logger.warning(f"Could not find artist data for: {artist_name}")
+        return None
+    
+    def _fetch_album_data_by_mbid_or_name(self, album_title: str, album_mbid: Optional[str], artist_name: Optional[str] = None) -> Optional[Dict]:
+        """Fetch full album data from MusicBrainz by MBID or name search."""
+        if album_mbid:
+            album_data = self.mb.get_release(album_mbid)
+            if album_data:
+                return album_data
+            logger.warning(f"Could not find album with MBID {album_mbid}, falling back to name search")
+        
+        # Fallback to name search (optionally with artist for better matching)
+        query = album_title
+        if artist_name:
+            query = f"{album_title} AND artist:{artist_name}"
+        
+        search_results = self.mb.search_releases(query, limit=5)
+        if search_results:
+            best_match = search_results[0]
+            return self.mb.get_release(best_match['id'])
+        
+        logger.warning(f"Could not find album data for: {album_title}")
+        return None
+    
+    def _fetch_label_data_by_mbid_or_name(self, label_name: str, label_mbid: Optional[str]) -> Optional[Dict]:
+        """Fetch full label data from MusicBrainz by MBID or name search."""
+        if label_mbid:
+            label_data = self.mb.get_label(label_mbid)
+            if label_data:
+                return label_data
+            logger.warning(f"Could not find label with MBID {label_mbid}, falling back to name search")
+        
+        # Fallback to name search
+        search_results = self.mb.search_labels(label_name, limit=5)
+        if search_results:
+            best_match = search_results[0]
+            return self.mb.get_label(best_match['id'])
+        
+        logger.warning(f"Could not find label data for: {label_name}")
         return None
     
     def _get_database_pages(self, database_id: str) -> List[Dict]:
@@ -2848,7 +2907,8 @@ class NotionMusicBrainzSync:
                     label_page_ids = []
                     for i, label_name in enumerate(label_names[:5]):  # Limit to 5 labels
                         label_mbid = label_mbids[i] if i < len(label_mbids) else None
-                        label_page_id = self._find_or_create_label_page(label_name, label_mbid)
+                        # Set DNS=True if this is part of Spotify URL flow (spotify_url is provided)
+                        label_page_id = self._find_or_create_label_page(label_name, label_mbid, set_dns=bool(spotify_url))
                         if label_page_id:
                             label_page_ids.append(label_page_id)
                     
@@ -3045,16 +3105,12 @@ class NotionMusicBrainzSync:
         
         return None
     
-    def _find_or_create_artist_page(self, artist_name: str, artist_mbid: Optional[str] = None) -> Optional[str]:
+    def _find_or_create_artist_page(self, artist_name: str, artist_mbid: Optional[str] = None, set_dns: bool = False) -> Optional[str]:
         """Find or create an artist page in the Artists database and return its page ID."""
         if not self.artists_db_id:
             return None
         
         try:
-            # #region agent log
-            logger.info(f"[DEBUG-A] _find_or_create_artist_page called: artist_name={artist_name}, artist_mbid={artist_mbid}")
-            # #endregion
-            
             normalized_mbid = self._normalize_mbid(artist_mbid)
             if normalized_mbid:
                 cached_page_id = self._artist_mbid_map.get(normalized_mbid)
@@ -3072,9 +3128,6 @@ class NotionMusicBrainzSync:
                                     cached_name = cached_page_title_prop['title'][0]['plain_text']
                                     # Check if names match (case-insensitive)
                                     if cached_name.lower() == artist_name.lower():
-                                        # #region agent log
-                                        logger.info(f"[DEBUG-D] Returned cached artist page: cached_page_id={cached_page_id}, normalized_mbid={normalized_mbid}, name_matches=True")
-                                        # #endregion
                                         return cached_page_id
                                     else:
                                         # Names don't match - MusicBrainz likely returned wrong artist for Spotify ID
@@ -3100,22 +3153,9 @@ class NotionMusicBrainzSync:
             }
             existing_pages = self.notion.query_database(self.artists_db_id, filter_params)
             
-            # #region agent log
-            found_pages = [{'id':p['id'],'title':p['properties'].get(title_key,{}).get('title',[{}])[0].get('plain_text','')} for p in existing_pages] if existing_pages else []
-            logger.info(f"[DEBUG-A] Searched for existing artist by name: artist_name={artist_name}, found_count={len(existing_pages)}, found_pages={found_pages}")
-            # #endregion
-            
             if existing_pages:
                 page = existing_pages[0]
                 page_id = page['id']
-                
-                # #region agent log
-                mbid_prop_key = self._get_property_key(mbid_prop_id, 'artists')
-                existing_mbid = self._extract_rich_text_plain(page['properties'].get(mbid_prop_key)) if mbid_prop_key else None
-                page_title = page['properties'].get(title_key,{}).get('title',[{}])[0].get('plain_text','')
-                mbids_match = existing_mbid==artist_mbid if (existing_mbid and artist_mbid) else None
-                logger.info(f"[DEBUG-A] Found existing artist page: page_id={page_id}, page_title={page_title}, existing_mbid={existing_mbid}, requested_mbid={artist_mbid}, mbids_match={mbids_match}")
-                # #endregion
                 
                 if normalized_mbid:
                     self._persist_mbid_on_page(
@@ -3136,10 +3176,6 @@ class NotionMusicBrainzSync:
             # Case-insensitive fallback
             all_pages = self._get_database_pages(self.artists_db_id)
             
-            # #region agent log
-            logger.info(f"[DEBUG-E] Starting case-insensitive fallback search: artist_name={artist_name}, total_pages={len(all_pages)}")
-            # #endregion
-            
             for page in all_pages:
                 page_props = page.get('properties', {})
                 page_title_prop = page_props.get(title_key, {})
@@ -3147,13 +3183,6 @@ class NotionMusicBrainzSync:
                     page_title = page_title_prop['title'][0]['plain_text']
                     if page_title.lower() == artist_name.lower():
                         page_id = page['id']
-                        
-                        # #region agent log
-                        mbid_prop_key = self._get_property_key(mbid_prop_id, 'artists')
-                        existing_mbid = self._extract_rich_text_plain(page_props.get(mbid_prop_key)) if mbid_prop_key else None
-                        mbids_match = existing_mbid==artist_mbid if (existing_mbid and artist_mbid) else None
-                        logger.info(f"[DEBUG-E] Case-insensitive match found: page_id={page_id}, page_title={page_title}, existing_mbid={existing_mbid}, requested_mbid={artist_mbid}, mbids_match={mbids_match}")
-                        # #endregion
                         
                         if normalized_mbid:
                             self._persist_mbid_on_page(
@@ -3174,27 +3203,24 @@ class NotionMusicBrainzSync:
             # Artist doesn't exist - create it
             logger.info(f"Creating new artist page: {artist_name}")
             
-            artist_data = None
-            if artist_mbid:
-                artist_data = self.mb.get_artist(artist_mbid)
+            # Fetch full artist data before creating
+            artist_data = self._fetch_artist_data_by_mbid_or_name(artist_name, artist_mbid)
             
-            artist_props = {
-                title_key: {'title': [{'text': {'content': artist_name}}]}
-            }
+            # Format ALL properties including DNS
+            artist_props = {}
+            if artist_data:
+                artist_props = self._format_artist_properties(artist_data)
+            else:
+                # Minimal fallback if no MusicBrainz data found
+                artist_props[title_key] = {'title': [{'text': {'content': artist_name}}]}
             
-            mbid_to_store = None
-            if artist_data and artist_data.get('id'):
-                mbid_to_store = artist_data['id']
-            elif artist_mbid:
-                mbid_to_store = artist_mbid
+            # Set DNS checkbox if requested (Spotify URL flow sets this to prevent automation cascade)
+            if set_dns:
+                dns_key = self._get_property_key(self.artists_properties.get('dns'), 'artists')
+                if dns_key:
+                    artist_props[dns_key] = {'checkbox': True}
             
-            if mbid_to_store and self.artists_properties.get('musicbrainz_id'):
-                mb_id_key = self._get_property_key(self.artists_properties['musicbrainz_id'], 'artists')
-                if mb_id_key:
-                    artist_props[mb_id_key] = {
-                        'rich_text': [{'text': {'content': mbid_to_store}}]
-                    }
-            
+            # Create page with everything in one call
             artist_page_id = self.notion.create_page(
                 self.artists_db_id,
                 artist_props,
@@ -3204,10 +3230,9 @@ class NotionMusicBrainzSync:
             
             if artist_page_id:
                 logger.info(f"Created artist page: {artist_name} (ID: {artist_page_id})")
-                if artist_data:
-                    full_props = self._format_artist_properties(artist_data)
-                    self.notion.update_page(artist_page_id, full_props)
-                self._register_mbid(self._artist_mbid_map, mbid_to_store, artist_page_id)
+                # Register in cache
+                if artist_data and artist_data.get('id'):
+                    self._register_mbid(self._artist_mbid_map, artist_data['id'], artist_page_id)
             
             return artist_page_id
             
@@ -3376,16 +3401,12 @@ class NotionMusicBrainzSync:
         
         return cover_url
     
-    def _find_or_create_album_page(self, album_title: str, album_mbid: Optional[str] = None) -> Optional[str]:
+    def _find_or_create_album_page(self, album_title: str, album_mbid: Optional[str] = None, artist_name: Optional[str] = None, set_dns: bool = False) -> Optional[str]:
         """Find or create an album page in the Albums database and return its page ID."""
         if not self.albums_db_id:
             return None
         
         try:
-            # #region agent log
-            logger.info(f"[DEBUG-B] _find_or_create_album_page called: album_title={album_title}, album_mbid={album_mbid}")
-            # #endregion
-            
             normalized_mbid = self._normalize_mbid(album_mbid)
             if normalized_mbid:
                 cached_page_id = self._album_mbid_map.get(normalized_mbid)
@@ -3402,7 +3423,6 @@ class NotionMusicBrainzSync:
                                     cached_title = cached_page_title_prop['title'][0]['plain_text']
                                     # Check if titles match (case-insensitive)
                                     if cached_title.lower() == album_title.lower():
-                                        logger.info(f"[DEBUG-B] Returned cached album page: cached_page_id={cached_page_id}, normalized_mbid={normalized_mbid}, title_matches=True")
                                         return cached_page_id
                                     else:
                                         # Titles don't match - MusicBrainz likely returned wrong album
@@ -3432,22 +3452,10 @@ class NotionMusicBrainzSync:
             
             existing_pages = self.notion.query_database(self.albums_db_id, filter_params)
             
-            # #region agent log
-            found_pages = [{'id':p['id'],'title':p['properties'].get(title_key,{}).get('title',[{}])[0].get('plain_text','')} for p in existing_pages] if existing_pages else []
-            logger.info(f"[DEBUG-B] Searched for existing album by title: album_title={album_title}, found_count={len(existing_pages)}, found_pages={found_pages}")
-            # #endregion
-            
             if existing_pages:
                 page = existing_pages[0]
                 album_page_id = page['id']
                 
-                # #region agent log
-                mbid_prop_key = self._get_property_key(mbid_prop_id, 'albums')
-                existing_mbid = self._extract_rich_text_plain(page['properties'].get(mbid_prop_key)) if mbid_prop_key else None
-                page_title = page['properties'].get(title_key,{}).get('title',[{}])[0].get('plain_text','')
-                mbids_match = existing_mbid==album_mbid if (existing_mbid and album_mbid) else None
-                logger.info(f"[DEBUG-B] Found existing album page: album_page_id={album_page_id}, page_title={page_title}, existing_mbid={existing_mbid}, requested_mbid={album_mbid}, mbids_match={mbids_match}")
-                # #endregion
                 if album_mbid:
                     album_data = self.mb.get_release(album_mbid)
                     if album_data:
@@ -3494,47 +3502,38 @@ class NotionMusicBrainzSync:
             # Album doesn't exist - create it
             logger.info(f"Creating new album page: {album_title}")
             
-            # Get album data from MusicBrainz if we have MBID
-            album_data = None
-            if album_mbid:
-                album_data = self.mb.get_release(album_mbid)
+            # Fetch full album data before creating
+            album_data = self._fetch_album_data_by_mbid_or_name(album_title, album_mbid, artist_name)
             
-            # Format properties for new album
+            # Format ALL properties including DNS
             album_props = {}
-            album_props[title_key] = {
-                'title': [{'text': {'content': album_title}}]
-            }
+            cover_url = None
+            if album_data:
+                album_props = self._format_album_properties(album_data)
+                cover_url = self._get_album_cover_url(album_data)
+            else:
+                # Minimal fallback if no MusicBrainz data found
+                album_props[title_key] = {'title': [{'text': {'content': album_title}}]}
             
-            mbid_to_store = None
-            if album_data and album_data.get('id'):
-                mbid_to_store = album_data['id']
-            elif album_mbid:
-                mbid_to_store = album_mbid
+            # Set DNS checkbox if requested (Spotify URL flow sets this to prevent automation cascade)
+            if set_dns:
+                dns_key = self._get_property_key(self.albums_properties.get('dns'), 'albums')
+                if dns_key:
+                    album_props[dns_key] = {'checkbox': True}
             
-            if mbid_to_store and self.albums_properties.get('musicbrainz_id'):
-                mb_id_key = self._get_property_key(self.albums_properties['musicbrainz_id'], 'albums')
-                if mb_id_key:
-                    album_props[mb_id_key] = {
-                        'rich_text': [{'text': {'content': mbid_to_store}}]
-                    }
-            
-            cover_url = self._get_album_cover_url(album_data) if album_data else None
-            
-            # Create the album page
+            # Create the album page with everything in one call
             album_page_id = self.notion.create_page(
                 self.albums_db_id,
                 album_props,
                 cover_url,
-                '💿'  # CD emoji
+                '💿'
             )
             
             if album_page_id:
                 logger.info(f"Created album page: {album_title} (ID: {album_page_id})")
-                # If we have full album data, update the page with it
-                if album_data:
-                    full_props = self._format_album_properties(album_data)
-                    self.notion.update_page(album_page_id, full_props, cover_url)
-                self._register_mbid(self._album_mbid_map, mbid_to_store, album_page_id)
+                # Register in cache
+                if album_data and album_data.get('id'):
+                    self._register_mbid(self._album_mbid_map, album_data['id'], album_page_id)
             
             return album_page_id
             
@@ -3542,7 +3541,7 @@ class NotionMusicBrainzSync:
             logger.error(f"Error finding/creating album page for '{album_title}': {e}")
             return None
     
-    def _find_or_create_label_page(self, label_name: str, label_mbid: Optional[str] = None) -> Optional[str]:
+    def _find_or_create_label_page(self, label_name: str, label_mbid: Optional[str] = None, set_dns: bool = False) -> Optional[str]:
         """Find or create a label page in the Labels database and return its page ID."""
         if not self.labels_db_id:
             return None
@@ -3621,45 +3620,36 @@ class NotionMusicBrainzSync:
             # Label doesn't exist - create it
             logger.info(f"Creating new label page: {label_name}")
             
-            # Get label data from MusicBrainz if we have MBID
-            label_data = None
-            if label_mbid:
-                label_data = self.mb.get_label(label_mbid)
+            # Fetch full label data before creating
+            label_data = self._fetch_label_data_by_mbid_or_name(label_name, label_mbid)
             
-            # Format properties for new label
+            # Format ALL properties including DNS
             label_props = {}
-            label_props[title_key] = {
-                'title': [{'text': {'content': label_name}}]
-            }
+            if label_data:
+                label_props = self._format_label_properties(label_data)
+            else:
+                # Minimal fallback if no MusicBrainz data found
+                label_props[title_key] = {'title': [{'text': {'content': label_name}}]}
             
-            mbid_to_store = None
-            if label_data and label_data.get('id'):
-                mbid_to_store = label_data['id']
-            elif label_mbid:
-                mbid_to_store = label_mbid
+            # Set DNS checkbox if requested (Spotify URL flow sets this to prevent automation cascade)
+            if set_dns:
+                dns_key = self._get_property_key(self.labels_properties.get('dns'), 'labels')
+                if dns_key:
+                    label_props[dns_key] = {'checkbox': True}
             
-            if mbid_to_store and self.labels_properties.get('musicbrainz_id'):
-                mb_id_key = self._get_property_key(self.labels_properties['musicbrainz_id'], 'labels')
-                if mb_id_key:
-                    label_props[mb_id_key] = {
-                        'rich_text': [{'text': {'content': mbid_to_store}}]
-                    }
-            
-            # Create the label page
+            # Create the label page with everything in one call
             label_page_id = self.notion.create_page(
                 self.labels_db_id,
                 label_props,
                 None,
-                '🏷️'  # Label emoji
+                '🏷️'
             )
             
             if label_page_id:
                 logger.info(f"Created label page: {label_name} (ID: {label_page_id})")
-                # If we have full label data, update the page with it
-                if label_data:
-                    full_props = self._format_label_properties(label_data)
-                    self.notion.update_page(label_page_id, full_props)
-                self._register_mbid(self._label_mbid_map, mbid_to_store, label_page_id)
+                # Register in cache
+                if label_data and label_data.get('id'):
+                    self._register_mbid(self._label_mbid_map, label_data['id'], label_page_id)
             
             return label_page_id
             
@@ -3763,7 +3753,8 @@ class NotionMusicBrainzSync:
     
     def _find_or_create_song_page(self, song_title: str, song_mbid: Optional[str] = None, 
                                    album_page_id: Optional[str] = None, 
-                                   artist_page_id: Optional[str] = None) -> Optional[str]:
+                                   artist_page_id: Optional[str] = None,
+                                   set_dns: bool = False) -> Optional[str]:
         """Find or create a song page in the Songs database and return its page ID."""
         if not self.songs_db_id:
             return None
@@ -3875,6 +3866,12 @@ class NotionMusicBrainzSync:
                     song_props[artist_key] = {
                         'relation': [{'id': artist_page_id}]
                     }
+            
+            # Set DNS checkbox if requested (Spotify URL flow sets this to prevent automation cascade)
+            if set_dns:
+                dns_key = self._get_property_key(self.songs_properties.get('dns'), 'songs')
+                if dns_key:
+                    song_props[dns_key] = {'checkbox': True}
             
             # Create the song page
             song_page_id = self.notion.create_page(
@@ -5065,12 +5062,6 @@ class NotionMusicBrainzSync:
         """Create a track page from Spotify data."""
         track_name = spotify_data.get('name', '')
         
-        # #region agent log
-        artists_info = [{'name':a.get('name'),'id':a.get('id')} for a in spotify_data.get('artists',[])]
-        album_info = {'name':spotify_data.get('album',{}).get('name'),'id':spotify_data.get('album',{}).get('id')}
-        logger.info(f"[DEBUG-C] _create_track_from_spotify called: track_name={track_name}, spotify_url={spotify_url}, artists={artists_info}, album={album_info}")
-        # #endregion
-        
         # Extract external IDs
         external_ids = self.mb._extract_external_ids(spotify_data)
         isrc = external_ids.get('isrc')
@@ -5138,16 +5129,8 @@ class NotionMusicBrainzSync:
                     album_mbid = mb_release.get('id')
                     logger.info(f"Found MusicBrainz release: {album_mbid}")
             
-            # #region agent log
-            mb_release_name = mb_release.get('title') if mb_release else None
-            logger.info(f"[DEBUG-B] About to call _find_or_create_album_page: album_name={album_name}, album_mbid={album_mbid}, upc={upc}, mb_release_name={mb_release_name}")
-            # #endregion
-            
-            album_page_id = self._find_or_create_album_page(album_name, album_mbid)
-            
-            # #region agent log
-            logger.info(f"[DEBUG-B] _find_or_create_album_page returned: album_page_id={album_page_id}")
-            # #endregion
+            # Pass artist name for better album matching, and set_dns=True for Spotify URL flow
+            album_page_id = self._find_or_create_album_page(album_name, album_mbid, artist_name=artists_data[0].get('name') if artists_data else None, set_dns=True)
         
         # Create/find artist
         artist_page_id = None
@@ -5163,23 +5146,16 @@ class NotionMusicBrainzSync:
                     artist_mbid = mb_artist.get('id')
                     logger.info(f"Found MusicBrainz artist: {artist_mbid}")
             
-            # #region agent log
-            mb_artist_name = mb_artist.get('name') if mb_artist else None
-            logger.info(f"[DEBUG-C] About to call _find_or_create_artist_page: artist_name={artist_name}, artist_spotify_id={artist_spotify_id}, artist_mbid={artist_mbid}, mb_artist_name={mb_artist_name}")
-            # #endregion
-            
-            artist_page_id = self._find_or_create_artist_page(artist_name, artist_mbid)
-            
-            # #region agent log
-            logger.info(f"[DEBUG-C] _find_or_create_artist_page returned: artist_page_id={artist_page_id}")
-            # #endregion
+            # Set DNS=True for Spotify URL flow to prevent automation cascade
+            artist_page_id = self._find_or_create_artist_page(artist_name, artist_mbid, set_dns=True)
         
-        # Create the song page
+        # Create the song page with DNS=True for Spotify URL flow
         song_page_id = self._find_or_create_song_page(
             track_name,
             song_mbid,
             album_page_id,
-            artist_page_id
+            artist_page_id,
+            set_dns=True
         )
         
         if not song_page_id:
@@ -5328,8 +5304,8 @@ class NotionMusicBrainzSync:
                     'created': False
                 }
         
-        # Create the album page
-        album_page_id = self._find_or_create_album_page(album_name, album_mbid)
+        # Create the album page with DNS=True for Spotify URL flow
+        album_page_id = self._find_or_create_album_page(album_name, album_mbid, set_dns=True)
         
         if not album_page_id:
             return {
@@ -5398,8 +5374,8 @@ class NotionMusicBrainzSync:
                     'created': False
                 }
         
-        # Create the artist page
-        artist_page_id = self._find_or_create_artist_page(artist_name, artist_mbid)
+        # Create the artist page with DNS=True for Spotify URL flow
+        artist_page_id = self._find_or_create_artist_page(artist_name, artist_mbid, set_dns=True)
         
         if not artist_page_id:
             return {
