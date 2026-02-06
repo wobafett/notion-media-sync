@@ -4920,7 +4920,7 @@ class NotionMusicBrainzSync:
         logger.info(f"Creating page from Spotify URL: {spotify_url}")
         
         # Parse Spotify URL
-        parsed = self._parse_spotify_url(spotify_url)
+        parsed = self.mb._parse_spotify_url(spotify_url)
         if not parsed:
             return {
                 'success': False,
@@ -4935,11 +4935,11 @@ class NotionMusicBrainzSync:
         # Fetch Spotify data based on type
         spotify_data = None
         if entity_type == 'track':
-            spotify_data = self._get_spotify_track_by_id(spotify_id)
+            spotify_data = self.mb._get_spotify_track_by_id(spotify_id)
         elif entity_type == 'album':
-            spotify_data = self._get_spotify_album_by_id(spotify_id)
+            spotify_data = self.mb._get_spotify_album_by_id(spotify_id)
         elif entity_type == 'artist':
-            spotify_data = self._get_spotify_artist_by_id(spotify_id)
+            spotify_data = self.mb._get_spotify_artist_by_id(spotify_id)
         
         if not spotify_data:
             return {
@@ -4973,7 +4973,7 @@ class NotionMusicBrainzSync:
         track_name = spotify_data.get('name', '')
         
         # Extract external IDs
-        external_ids = self._extract_external_ids(spotify_data)
+        external_ids = self.mb._extract_external_ids(spotify_data)
         isrc = external_ids.get('isrc')
         
         # Search MusicBrainz by ISRC
@@ -5029,7 +5029,7 @@ class NotionMusicBrainzSync:
         album_mbid = None
         if album_name:
             # Search for album by UPC if available
-            album_external_ids = self._extract_external_ids(album_data)
+            album_external_ids = self.mb._extract_external_ids(album_data)
             upc = album_external_ids.get('upc') or album_external_ids.get('ean')
             if upc:
                 logger.info(f"Searching MusicBrainz for album by barcode: {upc}")
@@ -5088,7 +5088,7 @@ class NotionMusicBrainzSync:
         album_name = spotify_data.get('name', '')
         
         # Extract external IDs
-        external_ids = self._extract_external_ids(spotify_data)
+        external_ids = self.mb._extract_external_ids(spotify_data)
         upc = external_ids.get('upc') or external_ids.get('ean')
         
         # Search MusicBrainz by barcode
