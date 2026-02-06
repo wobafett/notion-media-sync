@@ -18,7 +18,7 @@ from .hybrid_api import JikanAPI, ComicVineAPI, HybridBookAPI, StarWarsFandomAPI
 from shared.logging_config import get_logger, setup_logging
 from shared.notion_api import NotionAPI
 from shared.utils import (
-    clean_multi_select_value,
+    build_multi_select_options,
     get_database_id,
     get_notion_token,
     normalize_id,
@@ -755,9 +755,8 @@ class NotionGoogleBooksSync:
         if volume_info.get('authors') and self.property_mapping['authors_property_id']:
             property_key = self._get_property_key(self.property_mapping['authors_property_id'])
             if property_key:
-                properties[property_key] = {
-                    'multi_select': [{'name': author} for author in volume_info['authors']]
-                }
+                author_options = build_multi_select_options(volume_info['authors'], context='authors')
+                properties[property_key] = {'multi_select': author_options}
         
         # Description
         if volume_info.get('description') and self.property_mapping['description_property_id']:
@@ -918,9 +917,8 @@ class NotionGoogleBooksSync:
                     logger.info("Found 'Mature' theme, using for maturity rating")
                 
                 if categories:  # Only add if there are categories left
-                    properties[property_key] = {
-                        'multi_select': [{'name': cat} for cat in categories]
-                    }
+                    category_options = build_multi_select_options(categories, context='categories')
+                    properties[property_key] = {'multi_select': category_options}
         
         # Maturity Rating
         maturity_rating = None
@@ -939,17 +937,15 @@ class NotionGoogleBooksSync:
         if maturity_rating and self.property_mapping['content_rating_property_id']:
             property_key = self._get_property_key(self.property_mapping['content_rating_property_id'])
             if property_key:
-                properties[property_key] = {
-                    'multi_select': [{'name': maturity_rating}]
-                }
+                maturity_options = build_multi_select_options([maturity_rating], context='maturity_rating')
+                properties[property_key] = {'multi_select': maturity_options}
         
         # Print Type
         if volume_info.get('printType') and self.property_mapping['book_type_property_id']:
             property_key = self._get_property_key(self.property_mapping['book_type_property_id'])
             if property_key:
-                properties[property_key] = {
-                    'multi_select': [{'name': volume_info['printType']}]
-                }
+                print_type_options = build_multi_select_options([volume_info['printType']], context='print_type')
+                properties[property_key] = {'multi_select': print_type_options}
         
         return properties
     
@@ -1272,9 +1268,8 @@ class NotionGoogleBooksSync:
                 property_key = self._get_property_key(self.property_mapping['authors_property_id'])
                 logger.info(f"Authors found: {volume_info.get('authors')}, property_key: {property_key}")
                 if property_key:
-                    properties[property_key] = {
-                        'multi_select': [{'name': author} for author in volume_info['authors']]
-                    }
+                    author_options = build_multi_select_options(volume_info['authors'], context='authors')
+                    properties[property_key] = {'multi_select': author_options}
                     logger.info(f"Added authors property: {properties[property_key]}")
                 else:
                     logger.warning(f"Could not get property key for authors_property_id: {self.property_mapping['authors_property_id']}")
@@ -1320,9 +1315,8 @@ class NotionGoogleBooksSync:
             if volume_info.get('publisher') and self.property_mapping['publisher_property_id']:
                 property_key = self._get_property_key(self.property_mapping['publisher_property_id'])
                 if property_key:
-                    properties[property_key] = {
-                        'multi_select': [{'name': volume_info['publisher']}]
-                    }
+                    publisher_options = build_multi_select_options([volume_info['publisher']], context='publisher')
+                    properties[property_key] = {'multi_select': publisher_options}
                     logger.info(f"Added publisher property: {volume_info['publisher']}")
             
             # Publication Date (with optional end date for date ranges)
@@ -1420,17 +1414,15 @@ class NotionGoogleBooksSync:
             if volume_info.get('artists') and self.property_mapping['artists_property_id']:
                 property_key = self._get_property_key(self.property_mapping['artists_property_id'])
                 if property_key:
-                    properties[property_key] = {
-                        'multi_select': [{'name': artist} for artist in volume_info['artists']]
-                    }
+                    artist_options = build_multi_select_options(volume_info['artists'], context='artists')
+                    properties[property_key] = {'multi_select': artist_options}
             
             # Cover Artists
             if volume_info.get('cover_artists') and self.property_mapping['cover_artists_property_id']:
                 property_key = self._get_property_key(self.property_mapping['cover_artists_property_id'])
                 if property_key:
-                    properties[property_key] = {
-                        'multi_select': [{'name': artist} for artist in volume_info['cover_artists']]
-                    }
+                    cover_artist_options = build_multi_select_options(volume_info['cover_artists'], context='cover_artists')
+                    properties[property_key] = {'multi_select': cover_artist_options}
             
             # SW Timeline
             if volume_info.get('sw_timeline') and self.property_mapping['sw_timeline_property_id']:
@@ -1452,9 +1444,8 @@ class NotionGoogleBooksSync:
             if series_name and self.property_mapping['series_property_id']:
                 property_key = self._get_property_key(self.property_mapping['series_property_id'])
                 if property_key:
-                    properties[property_key] = {
-                        'multi_select': [{'name': series_name}]
-                    }
+                    series_options = build_multi_select_options([series_name], context='series')
+                    properties[property_key] = {'multi_select': series_options}
             
             # Comic Format (from Wookieepedia)
             if volume_info.get('format') and self.property_mapping['comic_format_property_id']:
@@ -1555,9 +1546,8 @@ class NotionGoogleBooksSync:
                     }
                     
                     language_name = language_names.get(language_code, language_code.upper())
-                    properties[property_key] = {
-                        'multi_select': [{'name': language_name}]
-                    }
+                    language_options = build_multi_select_options([language_name], context='language')
+                    properties[property_key] = {'multi_select': language_options}
             
             # ISBN
             if volume_info.get('industryIdentifiers') and self.property_mapping['isbn_property_id']:
@@ -1643,9 +1633,8 @@ class NotionGoogleBooksSync:
                     # Remove duplicates while preserving order
                     unique_categories = list(dict.fromkeys(all_categories))
                     
-                    properties[property_key] = {
-                        'multi_select': [{'name': category} for category in unique_categories]
-                    }
+                    category_options = build_multi_select_options(unique_categories, context='categories')
+                    properties[property_key] = {'multi_select': category_options}
             
             
             # Content Rating (Maturity Rating) - prioritize Jikan demographics, then ComicVine "Mature"
@@ -1668,17 +1657,15 @@ class NotionGoogleBooksSync:
             if maturity_rating and self.property_mapping['content_rating_property_id']:
                 property_key = self._get_property_key(self.property_mapping['content_rating_property_id'])
                 if property_key:
-                    properties[property_key] = {
-                        'multi_select': [{'name': maturity_rating}]
-                    }
+                    maturity_options = build_multi_select_options([maturity_rating], context='content_rating')
+                    properties[property_key] = {'multi_select': maturity_options}
             
             # Book Type (Print Type)
             if volume_info.get('printType') and self.property_mapping['book_type_property_id']:
                 property_key = self._get_property_key(self.property_mapping['book_type_property_id'])
                 if property_key:
-                    properties[property_key] = {
-                        'multi_select': [{'name': volume_info['printType']}]
-                    }
+                    print_type_options = build_multi_select_options([volume_info['printType']], context='book_type')
+                    properties[property_key] = {'multi_select': print_type_options}
             
             # Subtitle
             if volume_info.get('subtitle') and self.property_mapping['subtitle_property_id']:

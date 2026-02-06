@@ -17,7 +17,7 @@ import requests
 from notion_client import Client
 
 from shared.logging_config import get_logger, setup_logging
-from shared.utils import get_database_id, get_notion_token, normalize_id
+from shared.utils import build_multi_select_options, get_database_id, get_notion_token, normalize_id
 
 setup_logging('notion_tmdb_sync.log')
 logger = get_logger(__name__)
@@ -609,9 +609,8 @@ class NotionTMDbSync:
                 if result_genres is not None and lists_differ(current_genres, result_genres):
                     property_key = self._get_property_key(self.property_mapping['genres_property_id'])
                     if property_key:
-                        new_properties[property_key] = {
-                            'multi_select': [{'name': genre} for genre in result_genres]
-                        }
+                        genre_options = build_multi_select_options(result_genres, context='genres')
+                        new_properties[property_key] = {'multi_select': genre_options}
                         has_changes = True
             
             # Status
@@ -790,9 +789,8 @@ class NotionTMDbSync:
                 if result_cast is not None and set(current_cast) != set(result_cast):
                     property_key = self._get_property_key(self.property_mapping['cast_property_id'])
                     if property_key:
-                        new_properties[property_key] = {
-                            'multi_select': [{'name': name} for name in result_cast]
-                        }
+                        cast_options = build_multi_select_options(result_cast, context='cast')
+                        new_properties[property_key] = {'multi_select': cast_options}
                         has_changes = True
             
             # Director(s) (Movies only - TV shows use creators)
@@ -806,9 +804,8 @@ class NotionTMDbSync:
                 if result_directors is not None and set(current_directors) != set(result_directors):
                     property_key = self._get_property_key(self.property_mapping['director_property_id'])
                     if property_key:
-                        new_properties[property_key] = {
-                            'multi_select': [{'name': name} for name in result_directors]
-                        }
+                        director_options = build_multi_select_options(result_directors, context='directors')
+                        new_properties[property_key] = {'multi_select': director_options}
                         has_changes = True
             
             # Creator(s) (TV shows) - Show creators/showrunners
@@ -824,9 +821,8 @@ class NotionTMDbSync:
                 if result_creators is not None and set(current_creators) != set(result_creators):
                     property_key = self._get_property_key(self.property_mapping['creator_property_id'])
                     if property_key:
-                        new_properties[property_key] = {
-                            'multi_select': [{'name': name} for name in result_creators]
-                        }
+                        creator_options = build_multi_select_options(result_creators, context='creators')
+                        new_properties[property_key] = {'multi_select': creator_options}
                         has_changes = True
             
             # Production Companies
@@ -840,9 +836,8 @@ class NotionTMDbSync:
                 if result_companies is not None and set(current_companies) != set(result_companies):
                     property_key = self._get_property_key(self.property_mapping['production_companies_property_id'])
                     if property_key:
-                        new_properties[property_key] = {
-                            'multi_select': [{'name': company} for company in result_companies]
-                        }
+                        company_options = build_multi_select_options(result_companies, context='production_companies')
+                        new_properties[property_key] = {'multi_select': company_options}
                         has_changes = True
             
             # TMDb Homepage
@@ -892,9 +887,8 @@ class NotionTMDbSync:
                     if set(current_providers) != set(new_providers):
                         property_key = self._get_property_key(self.property_mapping['watch_providers_property_id'])
                         if property_key:
-                            new_properties[property_key] = {
-                                'multi_select': [{'name': provider} for provider in new_providers]
-                            }
+                            provider_options = build_multi_select_options(new_providers, context='watch_providers')
+                            new_properties[property_key] = {'multi_select': provider_options}
                             has_changes = True
             
             # Original Language
@@ -918,9 +912,8 @@ class NotionTMDbSync:
                 if set(current_countries) != set(tmdb_countries):
                     property_key = self._get_property_key(self.property_mapping['production_countries_property_id'])
                     if property_key:
-                        new_properties[property_key] = {
-                            'multi_select': [{'name': country} for country in tmdb_countries]
-                        }
+                        country_options = build_multi_select_options(tmdb_countries, context='production_countries')
+                        new_properties[property_key] = {'multi_select': country_options}
                         has_changes = True
             
             # Collection (Movies only)
@@ -935,9 +928,8 @@ class NotionTMDbSync:
                 if result_collections is not None and set(current_collections) != set(result_collections):
                     property_key = self._get_property_key(self.property_mapping['collection_property_id'])
                     if property_key:
-                        new_properties[property_key] = {
-                            'multi_select': [{'name': name} for name in result_collections]
-                        }
+                        collection_options = build_multi_select_options(result_collections, context='collection')
+                        new_properties[property_key] = {'multi_select': collection_options}
                         has_changes = True
             
             # Rating
@@ -1081,9 +1073,8 @@ class NotionTMDbSync:
                 cast_names = [person['name'] for person in cast]
                 property_key = self._get_property_key(self.property_mapping['cast_property_id'])
                 if property_key:
-                    properties[property_key] = {
-                        'multi_select': [{'name': name} for name in cast_names]
-                    }
+                    cast_options = build_multi_select_options(cast_names, context='cast')
+                    properties[property_key] = {'multi_select': cast_options}
             
             # Director(s)
             if tmdb_data.get('credits', {}).get('crew') and self.property_mapping['director_property_id']:
@@ -1092,9 +1083,8 @@ class NotionTMDbSync:
                 if director_names:
                     property_key = self._get_property_key(self.property_mapping['director_property_id'])
                     if property_key:
-                        properties[property_key] = {
-                            'multi_select': [{'name': name} for name in director_names]
-                        }
+                        director_options = build_multi_select_options(director_names, context='directors')
+                        properties[property_key] = {'multi_select': director_options}
             
             # Creator(s) (TV shows) - Show creators/showrunners
             if content_type == 'tv' and tmdb_data.get('created_by') and self.property_mapping['creator_property_id']:
@@ -1103,18 +1093,16 @@ class NotionTMDbSync:
                 if creator_names:
                     property_key = self._get_property_key(self.property_mapping['creator_property_id'])
                     if property_key:
-                        properties[property_key] = {
-                            'multi_select': [{'name': name} for name in creator_names]
-                        }
+                        creator_options = build_multi_select_options(creator_names, context='creators')
+                        properties[property_key] = {'multi_select': creator_options}
             
             # Production Companies
             if tmdb_data.get('production_companies') and self.property_mapping['production_companies_property_id']:
                 companies = [company['name'] for company in tmdb_data['production_companies'][:5]]  # Top 5 companies
                 property_key = self._get_property_key(self.property_mapping['production_companies_property_id'])
                 if property_key:
-                    properties[property_key] = {
-                        'multi_select': [{'name': company} for company in companies]
-                    }
+                    company_options = build_multi_select_options(companies, context='production_companies')
+                    properties[property_key] = {'multi_select': company_options}
             
             # Budget
             if tmdb_data.get('budget') and self.property_mapping['budget_property_id']:
@@ -1145,9 +1133,8 @@ class NotionTMDbSync:
                 countries = [country['name'] for country in tmdb_data['production_countries'][:5]]  # Top 5 countries
                 property_key = self._get_property_key(self.property_mapping['production_countries_property_id'])
                 if property_key:
-                    properties[property_key] = {
-                        'multi_select': [{'name': country} for country in countries]
-                    }
+                    country_options = build_multi_select_options(countries, context='production_countries')
+                    properties[property_key] = {'multi_select': country_options}
             
             # Tagline
             if tmdb_data.get('tagline') and self.property_mapping['tagline_property_id']:
@@ -1187,9 +1174,8 @@ class NotionTMDbSync:
                 if collection and collection.get('name'):
                     property_key = self._get_property_key(self.property_mapping['collection_property_id'])
                     if property_key:
-                        properties[property_key] = {
-                            'multi_select': [{'name': collection['name']}]
-                        }
+                        collection_options = build_multi_select_options([collection['name']], context='collection')
+                        properties[property_key] = {'multi_select': collection_options}
             
             # Watch Providers (using TMDb)
             if self.property_mapping['watch_providers_property_id'] and tmdb_data.get('id'):
@@ -1215,9 +1201,8 @@ class NotionTMDbSync:
                     if new_providers:
                         property_key = self._get_property_key(self.property_mapping['watch_providers_property_id'])
                         if property_key:
-                            properties[property_key] = {
-                                'multi_select': [{'name': provider} for provider in new_providers]
-                            }
+                            provider_options = build_multi_select_options(new_providers, context='watch_providers')
+                            properties[property_key] = {'multi_select': provider_options}
             
         except Exception as e:
             logger.error(f"Error formatting extended properties: {e}")

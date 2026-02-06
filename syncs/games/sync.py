@@ -17,7 +17,7 @@ from shared.change_detection import has_property_changes
 from shared.logging_config import get_logger, setup_logging
 from shared.notion_api import NotionAPI
 from shared.utils import (
-    clean_multi_select_value,
+    build_multi_select_options,
     get_database_id,
     get_notion_token,
     normalize_id,
@@ -1275,9 +1275,8 @@ class NotionIGDbSync:
                 if genre_names:
                     property_key = self._get_property_key(self.property_mapping['genres_property_id'])
                     if property_key:
-                        properties[property_key] = {
-                            'multi_select': [{'name': clean_multi_select_value(genre)} for genre in genre_names]
-                        }
+                        genre_options = build_multi_select_options(genre_names, context='genres')
+                        properties[property_key] = {'multi_select': genre_options}
             
             # Platforms
             if game_data.get('platforms') and self.property_mapping['platforms_property_id']:
@@ -1285,9 +1284,8 @@ class NotionIGDbSync:
                 if platform_names:
                     property_key = self._get_property_key(self.property_mapping['platforms_property_id'])
                     if property_key:
-                        properties[property_key] = {
-                            'multi_select': [{'name': clean_multi_select_value(platform)} for platform in platform_names]
-                        }
+                        platform_options = build_multi_select_options(platform_names, context='platforms')
+                        properties[property_key] = {'multi_select': platform_options}
             
             # Platform Family
             if game_data.get('platforms') and self.property_mapping['platform_family_property_id']:
@@ -1295,9 +1293,8 @@ class NotionIGDbSync:
                 if platform_family_names:
                     property_key = self._get_property_key(self.property_mapping['platform_family_property_id'])
                     if property_key:
-                        properties[property_key] = {
-                            'multi_select': [{'name': clean_multi_select_value(family)} for family in platform_family_names]
-                        }
+                        family_options = build_multi_select_options(platform_family_names, context='platform_family')
+                        properties[property_key] = {'multi_select': family_options}
             
             # Platform Type
             if game_data.get('platforms') and self.property_mapping['platform_type_property_id']:
@@ -1305,9 +1302,8 @@ class NotionIGDbSync:
                 if platform_type_names:
                     property_key = self._get_property_key(self.property_mapping['platform_type_property_id'])
                     if property_key:
-                        properties[property_key] = {
-                            'multi_select': [{'name': clean_multi_select_value(platform_type)} for platform_type in platform_type_names]
-                        }
+                        type_options = build_multi_select_options(platform_type_names, context='platform_type')
+                        properties[property_key] = {'multi_select': type_options}
             
             # Developers and Publishers (using involved_companies)
             if game_data.get('involved_companies') and (self.property_mapping['developers_property_id'] or self.property_mapping['publishers_property_id']):
@@ -1317,17 +1313,15 @@ class NotionIGDbSync:
                 if companies_data['developers'] and self.property_mapping['developers_property_id']:
                     property_key = self._get_property_key(self.property_mapping['developers_property_id'])
                     if property_key:
-                        properties[property_key] = {
-                            'multi_select': [{'name': clean_multi_select_value(dev)} for dev in companies_data['developers']]
-                        }
+                        developer_options = build_multi_select_options(companies_data['developers'], context='developers')
+                        properties[property_key] = {'multi_select': developer_options}
                 
                 # Publishers
                 if companies_data['publishers'] and self.property_mapping['publishers_property_id']:
                     property_key = self._get_property_key(self.property_mapping['publishers_property_id'])
                     if property_key:
-                        properties[property_key] = {
-                            'multi_select': [{'name': clean_multi_select_value(pub)} for pub in companies_data['publishers']]
-                        }
+                        publisher_options = build_multi_select_options(companies_data['publishers'], context='publishers')
+                        properties[property_key] = {'multi_select': publisher_options}
             
             # Franchise (multi_select field)
             if game_data.get('franchises') and self.property_mapping['franchise_property_id']:
@@ -1335,9 +1329,8 @@ class NotionIGDbSync:
                 if franchise_names:
                     property_key = self._get_property_key(self.property_mapping['franchise_property_id'])
                     if property_key:
-                        properties[property_key] = {
-                            'multi_select': [{'name': clean_multi_select_value(name)} for name in franchise_names]
-                        }
+                        franchise_options = build_multi_select_options(franchise_names, context='franchises')
+                        properties[property_key] = {'multi_select': franchise_options}
             
             # Collections/Series (multi_select field)
             if game_data.get('collections') and self.property_mapping['collections_property_id']:
@@ -1345,9 +1338,8 @@ class NotionIGDbSync:
                 if collection_names:
                     property_key = self._get_property_key(self.property_mapping['collections_property_id'])
                     if property_key:
-                        properties[property_key] = {
-                            'multi_select': [{'name': clean_multi_select_value(name)} for name in collection_names]
-                        }
+                        collection_options = build_multi_select_options(collection_names, context='collections')
+                        properties[property_key] = {'multi_select': collection_options}
             
             # Game Modes
             if game_data.get('game_modes') and self.property_mapping['game_modes_property_id']:
@@ -1355,9 +1347,8 @@ class NotionIGDbSync:
                 if game_mode_names:
                     property_key = self._get_property_key(self.property_mapping['game_modes_property_id'])
                     if property_key:
-                        properties[property_key] = {
-                            'multi_select': [{'name': clean_multi_select_value(mode)} for mode in game_mode_names]
-                        }
+                        mode_options = build_multi_select_options(game_mode_names, context='game_modes')
+                        properties[property_key] = {'multi_select': mode_options}
             
             # Game Status
             if self.property_mapping['game_status_property_id']:
@@ -1422,9 +1413,8 @@ class NotionIGDbSync:
                 
                 property_key = self._get_property_key(self.property_mapping['game_type_property_id'])
                 if property_key:
-                    properties[property_key] = {
-                        'multi_select': [{'name': clean_multi_select_value(category_name)}]
-                    }
+                    category_options = build_multi_select_options([category_name], context='category')
+                    properties[property_key] = {'multi_select': category_options}
             
             # Multiplayer Modes (clean feature list only)
             if game_data.get('multiplayer_modes') and self.property_mapping['multiplayer_modes_property_id']:
@@ -1432,9 +1422,8 @@ class NotionIGDbSync:
                 if multiplayer_mode_names:
                     property_key = self._get_property_key(self.property_mapping['multiplayer_modes_property_id'])
                     if property_key:
-                        properties[property_key] = {
-                            'multi_select': [{'name': clean_multi_select_value(mode)} for mode in multiplayer_mode_names]
-                        }
+                        multiplayer_options = build_multi_select_options(multiplayer_mode_names, context='multiplayer_modes')
+                        properties[property_key] = {'multi_select': multiplayer_options}
             
             # Player Counts (separate number fields)
             if game_data.get('multiplayer_modes'):
@@ -1482,9 +1471,8 @@ class NotionIGDbSync:
                 if theme_names:
                     property_key = self._get_property_key(self.property_mapping['themes_property_id'])
                     if property_key:
-                        properties[property_key] = {
-                            'multi_select': [{'name': clean_multi_select_value(theme)} for theme in theme_names]
-                        }
+                        theme_options = build_multi_select_options(theme_names, context='themes')
+                        properties[property_key] = {'multi_select': theme_options}
             
             # Website URL
             if game_data.get('url') and self.property_mapping['website_property_id']:
