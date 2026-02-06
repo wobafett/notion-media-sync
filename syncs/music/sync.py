@@ -3057,12 +3057,33 @@ class NotionMusicBrainzSync:
             
             normalized_mbid = self._normalize_mbid(artist_mbid)
             if normalized_mbid:
-                cached_page = self._artist_mbid_map.get(normalized_mbid)
-                if cached_page:
-                    # #region agent log
-                    logger.info(f"[DEBUG-D] Returned cached artist page: cached_page_id={cached_page}, normalized_mbid={normalized_mbid}")
-                    # #endregion
-                    return cached_page
+                cached_page_id = self._artist_mbid_map.get(normalized_mbid)
+                if cached_page_id:
+                    # Validate that the cached page's name matches the requested name
+                    # This prevents linking to wrong artists when MusicBrainz returns bad data
+                    try:
+                        cached_page = self.notion.get_page(cached_page_id)
+                        if cached_page:
+                            title_prop_id = self.artists_properties.get('title')
+                            title_key = self._get_property_key(title_prop_id, 'artists')
+                            if title_key:
+                                cached_page_title_prop = cached_page.get('properties', {}).get(title_key, {})
+                                if cached_page_title_prop.get('title') and cached_page_title_prop['title']:
+                                    cached_name = cached_page_title_prop['title'][0]['plain_text']
+                                    # Check if names match (case-insensitive)
+                                    if cached_name.lower() == artist_name.lower():
+                                        # #region agent log
+                                        logger.info(f"[DEBUG-D] Returned cached artist page: cached_page_id={cached_page_id}, normalized_mbid={normalized_mbid}, name_matches=True")
+                                        # #endregion
+                                        return cached_page_id
+                                    else:
+                                        # Names don't match - MusicBrainz likely returned wrong artist for Spotify ID
+                                        # Clear the bad MBID and search by name instead
+                                        logger.warning(f"Cached artist MBID {normalized_mbid} has name '{cached_name}' but requested name is '{artist_name}'. Ignoring bad MBID and searching by name.")
+                                        artist_mbid = None
+                                        normalized_mbid = None
+                    except Exception as e:
+                        logger.warning(f"Error validating cached artist page: {e}. Proceeding with name search.")
             
             title_prop_id = self.artists_properties.get('title')
             mbid_prop_id = self.artists_properties.get('musicbrainz_id')
@@ -3367,9 +3388,29 @@ class NotionMusicBrainzSync:
             
             normalized_mbid = self._normalize_mbid(album_mbid)
             if normalized_mbid:
-                cached_page = self._album_mbid_map.get(normalized_mbid)
-                if cached_page:
-                    return cached_page
+                cached_page_id = self._album_mbid_map.get(normalized_mbid)
+                if cached_page_id:
+                    # Validate that the cached page's title matches the requested title
+                    try:
+                        cached_page = self.notion.get_page(cached_page_id)
+                        if cached_page:
+                            title_prop_id = self.albums_properties.get('title')
+                            title_key = self._get_property_key(title_prop_id, 'albums')
+                            if title_key:
+                                cached_page_title_prop = cached_page.get('properties', {}).get(title_key, {})
+                                if cached_page_title_prop.get('title') and cached_page_title_prop['title']:
+                                    cached_title = cached_page_title_prop['title'][0]['plain_text']
+                                    # Check if titles match (case-insensitive)
+                                    if cached_title.lower() == album_title.lower():
+                                        logger.info(f"[DEBUG-B] Returned cached album page: cached_page_id={cached_page_id}, normalized_mbid={normalized_mbid}, title_matches=True")
+                                        return cached_page_id
+                                    else:
+                                        # Titles don't match - MusicBrainz likely returned wrong album
+                                        logger.warning(f"Cached album MBID {normalized_mbid} has title '{cached_title}' but requested title is '{album_title}'. Ignoring bad MBID and searching by title.")
+                                        album_mbid = None
+                                        normalized_mbid = None
+                    except Exception as e:
+                        logger.warning(f"Error validating cached album page: {e}. Proceeding with title search.")
             
             # First, try to find existing album by title
             title_prop_id = self.albums_properties.get('title')
