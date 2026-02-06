@@ -5290,18 +5290,30 @@ class NotionMusicBrainzSync:
             if mbid_key:
                 existing_page_id = self._find_existing_page_by_mbid(self.albums_db_id, album_mbid, mbid_key)
                 if existing_page_id:
-                    logger.info(f"Album already exists in Notion: {existing_page_id}")
-                    # Update the existing page
+                    # Validate that the existing page's title matches the requested title
                     page = self.notion.get_page(existing_page_id)
                     if page:
-                        self.sync_album_page(page, force_all=True, spotify_url=spotify_url)
-                    return {
-                        'success': True,
-                        'message': f'Updated existing album: {album_name}',
-                        'page_id': existing_page_id,
-                        'entity_type': 'album',
-                        'created': False
-                    }
+                        title_prop_id = self.albums_properties.get('title')
+                        title_key = self._get_property_key(title_prop_id, 'albums')
+                        if title_key:
+                            existing_page_title_prop = page.get('properties', {}).get(title_key, {})
+                            if existing_page_title_prop.get('title') and existing_page_title_prop['title']:
+                                existing_title = existing_page_title_prop['title'][0]['plain_text']
+                                # Check if titles match (case-insensitive)
+                                if existing_title.lower() == album_name.lower():
+                                    logger.info(f"Album already exists in Notion: {existing_page_id}")
+                                    self.sync_album_page(page, force_all=True, spotify_url=spotify_url)
+                                    return {
+                                        'success': True,
+                                        'message': f'Updated existing album: {album_name}',
+                                        'page_id': existing_page_id,
+                                        'entity_type': 'album',
+                                        'created': False
+                                    }
+                                else:
+                                    # Titles don't match - MusicBrainz returned wrong album
+                                    logger.warning(f"MBID {album_mbid} has title '{existing_title}' but requested title is '{album_name}'. Ignoring bad MBID and creating new page.")
+                                    album_mbid = None  # Clear the bad MBID
         
         # Check by Spotify URL
         spotify_key = self._get_property_key(self.albums_properties.get('listen'), 'albums')
@@ -5360,18 +5372,31 @@ class NotionMusicBrainzSync:
             if mbid_key:
                 existing_page_id = self._find_existing_page_by_mbid(self.artists_db_id, artist_mbid, mbid_key)
                 if existing_page_id:
-                    logger.info(f"Artist already exists in Notion: {existing_page_id}")
-                    # Update the existing page
+                    # Validate that the existing page's name matches the requested name
+                    # This prevents linking to wrong artists when MusicBrainz returns bad data
                     page = self.notion.get_page(existing_page_id)
                     if page:
-                        self.sync_artist_page(page, force_all=True, spotify_url=spotify_url)
-                    return {
-                        'success': True,
-                        'message': f'Updated existing artist: {artist_name}',
-                        'page_id': existing_page_id,
-                        'entity_type': 'artist',
-                        'created': False
-                    }
+                        title_prop_id = self.artists_properties.get('title')
+                        title_key = self._get_property_key(title_prop_id, 'artists')
+                        if title_key:
+                            existing_page_title_prop = page.get('properties', {}).get(title_key, {})
+                            if existing_page_title_prop.get('title') and existing_page_title_prop['title']:
+                                existing_name = existing_page_title_prop['title'][0]['plain_text']
+                                # Check if names match (case-insensitive)
+                                if existing_name.lower() == artist_name.lower():
+                                    logger.info(f"Artist already exists in Notion: {existing_page_id}")
+                                    self.sync_artist_page(page, force_all=True, spotify_url=spotify_url)
+                                    return {
+                                        'success': True,
+                                        'message': f'Updated existing artist: {artist_name}',
+                                        'page_id': existing_page_id,
+                                        'entity_type': 'artist',
+                                        'created': False
+                                    }
+                                else:
+                                    # Names don't match - MusicBrainz returned wrong artist for Spotify ID
+                                    logger.warning(f"MBID {artist_mbid} has name '{existing_name}' but requested name is '{artist_name}'. Ignoring bad MBID and creating new page.")
+                                    artist_mbid = None  # Clear the bad MBID
         
         # Check by Spotify URL
         spotify_key = self._get_property_key(self.artists_properties.get('streaming_link'), 'artists')
