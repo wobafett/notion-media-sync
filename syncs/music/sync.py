@@ -1372,9 +1372,12 @@ class NotionMusicBrainzSync:
     
     def _fetch_album_data_by_mbid_or_name(self, album_title: str, album_mbid: Optional[str], artist_name: Optional[str] = None) -> Optional[Dict]:
         """Fetch full album data from MusicBrainz by MBID or name search."""
+        logger.info(f"[FETCH-ALBUM] Called: title={album_title}, mbid={album_mbid}, artist={artist_name}")
         if album_mbid:
+            logger.info(f"[FETCH-ALBUM] Fetching by MBID: {album_mbid}")
             album_data = self.mb.get_release(album_mbid)
             if album_data:
+                logger.info(f"[FETCH-ALBUM] Found by MBID: keys={list(album_data.keys())}")
                 return album_data
             logger.warning(f"Could not find album with MBID {album_mbid}, falling back to name search")
         
@@ -1383,10 +1386,14 @@ class NotionMusicBrainzSync:
         if artist_name:
             query = f"{album_title} AND artist:{artist_name}"
         
+        logger.info(f"[FETCH-ALBUM] Searching with query: {query}")
         search_results = self.mb.search_releases(query, limit=5)
         if search_results:
             best_match = search_results[0]
-            return self.mb.get_release(best_match['id'])
+            logger.info(f"[FETCH-ALBUM] Search found {len(search_results)} results, using: {best_match.get('id')}")
+            result = self.mb.get_release(best_match['id'])
+            logger.info(f"[FETCH-ALBUM] Fetched release: has_data={bool(result)}")
+            return result
         
         logger.warning(f"Could not find album data for: {album_title}")
         return None
@@ -3515,31 +3522,43 @@ class NotionMusicBrainzSync:
             logger.info(f"Creating new album page: {album_title}")
             
             # Fetch full album data before creating
+            logger.info(f"[ALBUM-CREATE] Fetching data for: {album_title}, mbid={album_mbid}, artist={artist_name}")
             album_data = self._fetch_album_data_by_mbid_or_name(album_title, album_mbid, artist_name)
+            logger.info(f"[ALBUM-CREATE] Fetch result: has_data={bool(album_data)}, data_keys={list(album_data.keys()) if album_data else []}")
             
             # Format ALL properties including DNS
             album_props = {}
             cover_url = None
             if album_data:
                 album_props = self._format_album_properties(album_data)
+                logger.info(f"[ALBUM-CREATE] Formatted properties: count={len(album_props)}, keys={list(album_props.keys())}")
                 cover_url = self._get_album_cover_url(album_data)
+                logger.info(f"[ALBUM-CREATE] Cover URL: {bool(cover_url)}")
             else:
                 # Minimal fallback if no MusicBrainz data found
                 album_props[title_key] = {'title': [{'text': {'content': album_title}}]}
+                logger.info(f"[ALBUM-CREATE] No album data, using minimal fallback")
             
             # Set DNS checkbox if requested (Spotify URL flow sets this to prevent automation cascade)
+            dns_prop_id = self.albums_properties.get('dns')
+            dns_key = self._get_property_key(dns_prop_id, 'albums')
+            logger.info(f"[ALBUM-CREATE] DNS: set_dns={set_dns}, prop_id={dns_prop_id}, key={dns_key}")
             if set_dns:
-                dns_key = self._get_property_key(self.albums_properties.get('dns'), 'albums')
                 if dns_key:
                     album_props[dns_key] = {'checkbox': True}
+                    logger.info(f"[ALBUM-CREATE] DNS checkbox ADDED to props")
+                else:
+                    logger.warning(f"[ALBUM-CREATE] DNS checkbox requested but key is None!")
             
             # Create the album page with everything in one call
+            logger.info(f"[ALBUM-CREATE] Creating page with {len(album_props)} properties, has_cover={bool(cover_url)}")
             album_page_id = self.notion.create_page(
                 self.albums_db_id,
                 album_props,
                 cover_url,
                 '💿'
             )
+            logger.info(f"[ALBUM-CREATE] Page created: {album_page_id}")
             
             if album_page_id:
                 logger.info(f"Created album page: {album_title} (ID: {album_page_id})")
