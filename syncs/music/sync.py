@@ -3807,6 +3807,11 @@ class NotionMusicBrainzSync:
     
     def sync_song_page(self, page: Dict, force_all: bool = False, spotify_url: str = None) -> Optional[bool]:
         """Sync a single song page with MusicBrainz data."""
+        # #region agent log
+        import json, time
+        with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A,E","location":"sync.py:3808","message":"sync_song_page entry","data":{"page_id":page.get('id'),"force_all":force_all,"spotify_url":spotify_url},"timestamp":int(time.time()*1000)})+'\n')
+        # #endregion
         try:
             page_id = page['id']
             properties = page.get('properties', {})
@@ -4208,7 +4213,16 @@ class NotionMusicBrainzSync:
             
             if not recording_data:
                 logger.warning(f"Could not get song data for: {title}")
+                # #region agent log
+                with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B,C","location":"sync.py:4214","message":"No recording_data found","data":{"title":title,"existing_mbid":existing_mbid,"active_spotify_url":active_spotify_url},"timestamp":int(time.time()*1000)})+'\n')
+                # #endregion
                 return False
+            
+            # #region agent log
+            with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C,D","location":"sync.py:4223","message":"Found recording_data, formatting properties","data":{"title":title,"recording_id":recording_data.get('id'),"recording_keys":list(recording_data.keys()),"has_matched_release":bool(matched_release),"spotify_provided_via_input":spotify_provided_via_input},"timestamp":int(time.time()*1000)})+'\n')
+            # #endregion
             
             # Format properties
             # Skip writing Spotify URL if it was provided as input (preserve user's input)
@@ -4219,6 +4233,11 @@ class NotionMusicBrainzSync:
                 skip_spotify_url=spotify_provided_via_input
             )
             
+            # #region agent log
+            with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"sync.py:4238","message":"Properties formatted","data":{"title":title,"prop_count":len(notion_props),"prop_keys":list(notion_props.keys())},"timestamp":int(time.time()*1000)})+'\n')
+            # #endregion
+            
             # Preserve existing relations (merge instead of replace)
             notion_props = self._merge_relations(page, notion_props, 'songs')
             
@@ -4226,7 +4245,14 @@ class NotionMusicBrainzSync:
             icon = '🎵'  # Musical note emoji for songs
             
             # Update the page
-            if self.notion.update_page(page_id, notion_props, None, icon):
+            update_result = self.notion.update_page(page_id, notion_props, None, icon)
+            
+            # #region agent log
+            with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"sync.py:4255","message":"Page update result","data":{"title":title,"update_result":update_result},"timestamp":int(time.time()*1000)})+'\n')
+            # #endregion
+            
+            if update_result:
                 logger.info(f"Successfully updated song: {title}")
                 return True
             else:
@@ -4972,9 +4998,20 @@ class NotionMusicBrainzSync:
         """Create a track page from Spotify data."""
         track_name = spotify_data.get('name', '')
         
+        # #region agent log
+        import json, time
+        with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A,B","location":"sync.py:4972","message":"_create_track_from_spotify entry","data":{"track_name":track_name,"has_spotify_data":bool(spotify_data)},"timestamp":int(time.time()*1000)})+'\n')
+        # #endregion
+        
         # Extract external IDs
         external_ids = self.mb._extract_external_ids(spotify_data)
         isrc = external_ids.get('isrc')
+        
+        # #region agent log
+        with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"sync.py:4980","message":"Extracted ISRC","data":{"isrc":isrc,"external_ids":external_ids},"timestamp":int(time.time()*1000)})+'\n')
+        # #endregion
         
         # Search MusicBrainz by ISRC
         mb_recording = None
@@ -4985,6 +5022,11 @@ class NotionMusicBrainzSync:
             if mb_recording:
                 song_mbid = mb_recording.get('id')
                 logger.info(f"Found MusicBrainz recording: {song_mbid}")
+        
+        # #region agent log
+        with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B,C","location":"sync.py:4992","message":"MusicBrainz recording lookup result","data":{"isrc":isrc,"found_recording":bool(mb_recording),"song_mbid":song_mbid,"recording_keys":list(mb_recording.keys()) if mb_recording else None},"timestamp":int(time.time()*1000)})+'\n')
+        # #endregion
         
         # Check if song already exists in Notion
         if song_mbid:
@@ -5064,6 +5106,11 @@ class NotionMusicBrainzSync:
             artist_page_id
         )
         
+        # #region agent log
+        with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A,E","location":"sync.py:5075","message":"Song page created","data":{"song_page_id":song_page_id,"track_name":track_name,"song_mbid":song_mbid},"timestamp":int(time.time()*1000)})+'\n')
+        # #endregion
+        
         if not song_page_id:
             return {
                 'success': False,
@@ -5072,8 +5119,27 @@ class NotionMusicBrainzSync:
         
         # Now sync the page to populate all fields
         page = self.notion.get_page(song_page_id)
+        
+        # #region agent log
+        with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A,E","location":"sync.py:5086","message":"About to sync song page","data":{"song_page_id":song_page_id,"page_retrieved":bool(page),"spotify_url":spotify_url},"timestamp":int(time.time()*1000)})+'\n')
+        # #endregion
+        
         if page:
-            self.sync_song_page(page, force_all=True, spotify_url=spotify_url)
+            sync_result = self.sync_song_page(page, force_all=True, spotify_url=spotify_url)
+            
+            # #region agent log
+            with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A,E","location":"sync.py:5095","message":"Song page sync completed","data":{"song_page_id":song_page_id,"sync_result":sync_result},"timestamp":int(time.time()*1000)})+'\n')
+            # #endregion
+            
+            # If MusicBrainz sync failed, populate with Spotify data as fallback
+            if not sync_result and spotify_data:
+                logger.info(f"MusicBrainz sync failed, populating with Spotify data for '{track_name}'")
+                spotify_props = self._format_spotify_song_properties(spotify_data, spotify_url)
+                if spotify_props:
+                    self.notion.update_page(song_page_id, spotify_props)
+                    logger.info(f"Updated song with Spotify data: {track_name}")
         
         return {
             'success': True,
@@ -5082,6 +5148,53 @@ class NotionMusicBrainzSync:
             'entity_type': 'song',
             'created': True
         }
+    
+    def _format_spotify_song_properties(self, spotify_data: Dict, spotify_url: str) -> Dict:
+        """Format Spotify track data for Notion properties (fallback when MusicBrainz unavailable)."""
+        properties = {}
+        
+        try:
+            # Spotify URL (Listen property)
+            if spotify_url and self.songs_properties.get('listen'):
+                prop_key = self._get_property_key(self.songs_properties['listen'], 'songs')
+                if prop_key:
+                    properties[prop_key] = {'url': spotify_url}
+            
+            # Track length/duration (convert from milliseconds to seconds)
+            if spotify_data.get('duration_ms') and self.songs_properties.get('length'):
+                prop_key = self._get_property_key(self.songs_properties['length'], 'songs')
+                if prop_key:
+                    duration_seconds = spotify_data['duration_ms'] / 1000
+                    # Format as MM:SS
+                    minutes = int(duration_seconds // 60)
+                    seconds = int(duration_seconds % 60)
+                    properties[prop_key] = {
+                        'rich_text': [{'text': {'content': f"{minutes}:{seconds:02d}"}}]
+                    }
+            
+            # Track number (disc_number and track_number)
+            if spotify_data.get('track_number') and self.songs_properties.get('track_number'):
+                prop_key = self._get_property_key(self.songs_properties['track_number'], 'songs')
+                if prop_key:
+                    track_num = spotify_data['track_number']
+                    if spotify_data.get('disc_number', 1) > 1:
+                        track_num = f"{spotify_data['disc_number']}-{track_num}"
+                    properties[prop_key] = {'number': spotify_data['track_number']}
+            
+            # ISRC (if available)
+            if spotify_data.get('external_ids', {}).get('isrc') and self.songs_properties.get('isrc'):
+                prop_key = self._get_property_key(self.songs_properties['isrc'], 'songs')
+                if prop_key:
+                    properties[prop_key] = {
+                        'rich_text': [{'text': {'content': spotify_data['external_ids']['isrc']}}]
+                    }
+            
+            logger.info(f"Formatted {len(properties)} Spotify properties for song")
+            return properties
+            
+        except Exception as e:
+            logger.error(f"Error formatting Spotify song properties: {e}")
+            return {}
     
     def _create_album_from_spotify(self, spotify_data: Dict, spotify_url: str) -> Dict:
         """Create an album page from Spotify data."""
