@@ -42,6 +42,26 @@ Add these secrets to your GitHub repository (`Settings > Secrets and variables >
   - If `page_id` is provided, the job calls `python3 webhook.py` to auto-route the page’s database.
   - Otherwise it runs `python3 main.py --target <games|music|movies|books>` with the provided flags.
 
+#### Spotify URL Input (Music Syncs)
+
+The `spotify_url` workflow input enables accurate music identification:
+
+- **What it does**: Uses Spotify API to extract ISRC/UPC/EAN identifiers, then matches them to MusicBrainz entries
+- **When to use**: When you want precise matching for songs, albums, or artists
+- **How it works**:
+  1. Extracts metadata from Spotify (track info, album barcodes, artist IDs)
+  2. Searches MusicBrainz using external IDs (much more accurate than name search)
+  3. Falls back to name-based search if external ID not found
+- **Property behavior**: The "Spotify" property serves dual purpose:
+  - **Input**: If filled, reads and uses for identification
+  - **Output**: If empty, writes found URL after sync
+  - User-provided URLs are preserved (not overwritten)
+
+**Example workflow runs:**
+- Track: `spotify_url: "https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6"`
+- Album: `spotify_url: "https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy"`
+- Artist: `spotify_url: "https://open.spotify.com/artist/0OdUWJ0sBjDrqHygGUXeCF"`
+
 ### 🛠️ Setup Instructions
 
 1. **Create/Clone Repository**

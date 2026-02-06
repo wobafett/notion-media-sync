@@ -80,6 +80,43 @@ The repo includes `.github/workflows/notion-sync.yml`, which exposes a manual `w
 
 Manual dispatch lets you test the router/webhook end-to-end in the cloud without needing four separate workflows or repos.
 
+### Spotify URL Input (Music Syncs Only)
+
+For music syncs, you can now provide Spotify URLs to improve matching accuracy:
+
+**How it works:**
+1. **Input Methods:**
+   - Paste a Spotify URL into the "Spotify" property in Notion
+   - Pass `--spotify-url` parameter via CLI or workflow
+   - Include `spotify_url` in Make.com webhook payload
+
+2. **Matching Process:**
+   - **Songs**: Extracts ISRC from Spotify → searches MusicBrainz by ISRC
+   - **Albums**: Extracts UPC/EAN barcode → searches MusicBrainz by barcode
+   - **Artists**: Extracts Spotify ID → searches MusicBrainz by Spotify relationship
+
+3. **Dual-Purpose Property:**
+   - If "Spotify" field is filled → reads and uses for identification
+   - If "Spotify" field is empty → writes the found URL back after syncing
+   - If URL was provided, it's preserved (not overwritten)
+
+4. **Fallback Behavior:**
+   - If Spotify URL not provided → uses standard name-based search
+   - If ISRC/UPC not found → falls back to name-based search
+   - Works seamlessly with existing sync logic
+
+**Example CLI usage:**
+```bash
+# Single song with Spotify URL
+python3 webhook.py --page-id <page_id> --spotify-url "https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6"
+
+# Album with Spotify URL
+python3 webhook.py --page-id <page_id> --spotify-url "https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy"
+
+# Artist with Spotify URL
+python3 webhook.py --page-id <page_id> --spotify-url "https://open.spotify.com/artist/0OdUWJ0sBjDrqHygGUXeCF"
+```
+
 ## 📋 Setup Guide
 
 ### 1. Environment Variables
