@@ -1351,11 +1351,9 @@ class NotionMusicBrainzSync:
     
     def _fetch_artist_data_by_mbid_or_name(self, artist_name: str, artist_mbid: Optional[str]) -> Optional[Dict]:
         """Fetch full artist data from MusicBrainz by MBID or name search."""
-        logger.info(f"[DEBUG] Fetching artist data: name={artist_name}, mbid={artist_mbid}")
         if artist_mbid:
             artist_data = self.mb.get_artist(artist_mbid)
             if artist_data:
-                logger.info(f"[DEBUG] Artist data found by MBID: {artist_name}, keys={list(artist_data.keys())}")
                 return artist_data
             logger.warning(f"Could not find artist with MBID {artist_mbid}, falling back to name search")
         
@@ -1363,21 +1361,16 @@ class NotionMusicBrainzSync:
         search_results = self.mb.search_artists(artist_name, limit=5)
         if search_results:
             best_match = search_results[0]
-            result = self.mb.get_artist(best_match['id'])
-            logger.info(f"[DEBUG] Artist data found by search: {artist_name}, has_data={bool(result)}")
-            return result
+            return self.mb.get_artist(best_match['id'])
         
         logger.warning(f"Could not find artist data for: {artist_name}")
         return None
     
     def _fetch_album_data_by_mbid_or_name(self, album_title: str, album_mbid: Optional[str], artist_name: Optional[str] = None) -> Optional[Dict]:
         """Fetch full album data from MusicBrainz by MBID or name search."""
-        logger.info(f"[FETCH-ALBUM] Called: title={album_title}, mbid={album_mbid}, artist={artist_name}")
         if album_mbid:
-            logger.info(f"[FETCH-ALBUM] Fetching by MBID: {album_mbid}")
             album_data = self.mb.get_release(album_mbid)
             if album_data:
-                logger.info(f"[FETCH-ALBUM] Found by MBID: keys={list(album_data.keys())}")
                 return album_data
             logger.warning(f"Could not find album with MBID {album_mbid}, falling back to name search")
         
@@ -1386,14 +1379,10 @@ class NotionMusicBrainzSync:
         if artist_name:
             query = f"{album_title} AND artist:{artist_name}"
         
-        logger.info(f"[FETCH-ALBUM] Searching with query: {query}")
         search_results = self.mb.search_releases(query, limit=5)
         if search_results:
             best_match = search_results[0]
-            logger.info(f"[FETCH-ALBUM] Search found {len(search_results)} results, using: {best_match.get('id')}")
-            result = self.mb.get_release(best_match['id'])
-            logger.info(f"[FETCH-ALBUM] Fetched release: has_data={bool(result)}")
-            return result
+            return self.mb.get_release(best_match['id'])
         
         logger.warning(f"Could not find album data for: {album_title}")
         return None
@@ -2843,8 +2832,6 @@ class NotionMusicBrainzSync:
         """Format MusicBrainz release data for Notion properties."""
         properties = {}
         
-        logger.info(f"[FORMAT-ALBUM] Formatting album: title={release_data.get('title')}, id={release_data.get('id')}, has_release_group={bool(release_data.get('release-group'))}")
-        
         try:
             # Title
             if release_data.get('title') and self.albums_properties.get('title'):
@@ -3018,11 +3005,8 @@ class NotionMusicBrainzSync:
             if release_data.get('release-group') and release_data['release-group'].get('primary-type') and self.albums_properties.get('type'):
                 album_type = release_data['release-group']['primary-type']
                 prop_key = self._get_property_key(self.albums_properties['type'], 'albums')
-                logger.info(f"[FORMAT-ALBUM] Album type: {album_type}, prop_key={prop_key}")
                 if prop_key:
                     properties[prop_key] = {'select': {'name': album_type}}
-            else:
-                logger.info(f"[FORMAT-ALBUM] Album type NOT set: has_rg={bool(release_data.get('release-group'))}, has_type={bool(release_data.get('release-group', {}).get('primary-type'))}, has_prop={bool(self.albums_properties.get('type'))}")
             
             # Spotify link (from url-rels) - check for both "streaming" and "free streaming"
             # Only write Spotify URL if it wasn't provided as input
@@ -3067,11 +3051,8 @@ class NotionMusicBrainzSync:
             if release_data.get('id') and self.albums_properties.get('musicbrainz_url'):
                 mb_url = f"https://musicbrainz.org/release/{release_data['id']}"
                 prop_key = self._get_property_key(self.albums_properties['musicbrainz_url'], 'albums')
-                logger.info(f"[FORMAT-ALBUM] MB URL: {mb_url}, prop_key={prop_key}")
                 if prop_key:
                     properties[prop_key] = {'url': mb_url}
-            else:
-                logger.info(f"[FORMAT-ALBUM] MB URL NOT set: has_id={bool(release_data.get('id'))}, has_prop={bool(self.albums_properties.get('musicbrainz_url'))}")
             
             # Last updated
             if self.albums_properties.get('last_updated'):
@@ -3082,7 +3063,6 @@ class NotionMusicBrainzSync:
         except Exception as e:
             logger.error(f"Error formatting album properties: {e}", exc_info=True)
         
-        logger.info(f"[FORMAT-ALBUM] Formatted {len(properties)} properties")
         return properties
     
     def _find_existing_page_by_mbid(self, database_id: str, mbid: str, mbid_prop_key: str) -> Optional[str]:
@@ -3230,25 +3210,17 @@ class NotionMusicBrainzSync:
             artist_props = {}
             if artist_data:
                 artist_props = self._format_artist_properties(artist_data)
-                logger.info(f"[DEBUG] Formatted artist properties: {artist_name}, props_count={len(artist_props)}")
             else:
                 # Minimal fallback if no MusicBrainz data found
                 artist_props[title_key] = {'title': [{'text': {'content': artist_name}}]}
-                logger.info(f"[DEBUG] No artist data, using fallback for: {artist_name}")
             
             # Set DNS checkbox if requested (Spotify URL flow sets this to prevent automation cascade)
-            dns_prop_id = self.artists_properties.get('dns')
-            dns_key = self._get_property_key(dns_prop_id, 'artists')
-            logger.info(f"[DEBUG] DNS handling: set_dns={set_dns}, dns_prop_id={dns_prop_id}, dns_key={dns_key}")
             if set_dns:
+                dns_key = self._get_property_key(self.artists_properties.get('dns'), 'artists')
                 if dns_key:
                     artist_props[dns_key] = {'checkbox': True}
-                    logger.info(f"[DEBUG] DNS checkbox SET in props: dns_key={dns_key}")
-                else:
-                    logger.warning(f"[DEBUG] DNS checkbox requested but dns_key is None!")
             
             # Create page with everything in one call
-            logger.info(f"[DEBUG] Creating artist page with {len(artist_props)} properties, DNS in props: {dns_key in artist_props if dns_key else False}")
             artist_page_id = self.notion.create_page(
                 self.artists_db_id,
                 artist_props,
@@ -3532,43 +3504,31 @@ class NotionMusicBrainzSync:
             logger.info(f"Creating new album page: {album_title}")
             
             # Fetch full album data before creating
-            logger.info(f"[ALBUM-CREATE] Fetching data for: {album_title}, mbid={album_mbid}, artist={artist_name}")
             album_data = self._fetch_album_data_by_mbid_or_name(album_title, album_mbid, artist_name)
-            logger.info(f"[ALBUM-CREATE] Fetch result: has_data={bool(album_data)}, data_keys={list(album_data.keys()) if album_data else []}")
             
             # Format ALL properties including DNS
             album_props = {}
             cover_url = None
             if album_data:
                 album_props = self._format_album_properties(album_data, skip_spotify_url=False, set_dns_on_labels=set_dns)
-                logger.info(f"[ALBUM-CREATE] Formatted properties: count={len(album_props)}, keys={list(album_props.keys())}")
                 cover_url = self._get_album_cover_url(album_data)
-                logger.info(f"[ALBUM-CREATE] Cover URL: {bool(cover_url)}")
             else:
                 # Minimal fallback if no MusicBrainz data found
                 album_props[title_key] = {'title': [{'text': {'content': album_title}}]}
-                logger.info(f"[ALBUM-CREATE] No album data, using minimal fallback")
             
             # Set DNS checkbox if requested (Spotify URL flow sets this to prevent automation cascade)
-            dns_prop_id = self.albums_properties.get('dns')
-            dns_key = self._get_property_key(dns_prop_id, 'albums')
-            logger.info(f"[ALBUM-CREATE] DNS: set_dns={set_dns}, prop_id={dns_prop_id}, key={dns_key}")
             if set_dns:
+                dns_key = self._get_property_key(self.albums_properties.get('dns'), 'albums')
                 if dns_key:
                     album_props[dns_key] = {'checkbox': True}
-                    logger.info(f"[ALBUM-CREATE] DNS checkbox ADDED to props")
-                else:
-                    logger.warning(f"[ALBUM-CREATE] DNS checkbox requested but key is None!")
             
             # Create the album page with everything in one call
-            logger.info(f"[ALBUM-CREATE] Creating page with {len(album_props)} properties, has_cover={bool(cover_url)}")
             album_page_id = self.notion.create_page(
                 self.albums_db_id,
                 album_props,
                 cover_url,
                 '💿'
             )
-            logger.info(f"[ALBUM-CREATE] Page created: {album_page_id}")
             
             if album_page_id:
                 logger.info(f"Created album page: {album_title} (ID: {album_page_id})")
@@ -5202,7 +5162,6 @@ class NotionMusicBrainzSync:
                 if spotify_prop_id:
                     spotify_key = self._get_property_key(spotify_prop_id, 'albums')
                     if spotify_key:
-                        logger.info(f"[DEBUG] Adding Spotify URL to album page")
                         self.notion.update_page(album_page_id, {
                             spotify_key: {'url': album_spotify_url}
                         })
@@ -5222,25 +5181,15 @@ class NotionMusicBrainzSync:
                     logger.info(f"Found MusicBrainz artist: {artist_mbid}")
             
             # Set DNS=True for Spotify URL flow to prevent automation cascade
-            logger.info(f"[DEBUG] Calling _find_or_create_artist_page: name={artist_name}, mbid={artist_mbid}, set_dns=True")
             artist_page_id = self._find_or_create_artist_page(artist_name, artist_mbid, set_dns=True)
             
             # Set artist cover image from Spotify
-            logger.info(f"[DEBUG] Artist cover: page_id={artist_page_id}, spotify_id={artist_spotify_id}")
             if artist_page_id and artist_spotify_id:
                 artist_cover_url = self.mb._get_spotify_artist_image(artist_name, artist_mbid, artist_spotify_id)
-                logger.info(f"[DEBUG] Fetched artist cover URL: {artist_cover_url[:100] if artist_cover_url else None}")
                 if artist_cover_url:
-                    logger.info(f"[DEBUG] Setting artist cover image from Spotify")
                     self.notion.update_page(artist_page_id, {}, artist_cover_url)
-                    logger.info(f"[DEBUG] Artist cover image set successfully")
-                else:
-                    logger.warning(f"[DEBUG] No artist cover URL returned from Spotify")
-            else:
-                logger.warning(f"[DEBUG] Cannot set artist cover: missing page_id or spotify_id")
         
         # Create the song page with DNS=True for Spotify URL flow
-        logger.info(f"[TRACK-CREATE] Creating song: {track_name}, mbid={song_mbid}, spotify_url={spotify_url}")
         song_page_id = self._find_or_create_song_page(
             track_name,
             song_mbid,
@@ -5251,7 +5200,6 @@ class NotionMusicBrainzSync:
         
         # Populate Spotify URL on the song page
         if song_page_id and spotify_url:
-            logger.info(f"[TRACK-CREATE] Adding Spotify URL to song page")
             spotify_prop_id = self.songs_properties.get('listen')
             if spotify_prop_id:
                 spotify_key = self._get_property_key(spotify_prop_id, 'songs')
@@ -5259,11 +5207,6 @@ class NotionMusicBrainzSync:
                     self.notion.update_page(song_page_id, {
                         spotify_key: {'url': spotify_url}
                     })
-                    logger.info(f"[TRACK-CREATE] Spotify URL added")
-                else:
-                    logger.warning(f"[TRACK-CREATE] Spotify key not found for property {spotify_prop_id}")
-            else:
-                logger.warning(f"[TRACK-CREATE] Spotify property 'listen' not found in songs_properties")
         
         if not song_page_id:
             return {
