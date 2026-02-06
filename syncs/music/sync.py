@@ -5196,12 +5196,12 @@ class NotionMusicBrainzSync:
                     # Fetch full artist data to get genres
                     artist_data = self._get_spotify_artist_by_id(artist_spotify_id)
                     if artist_data and artist_data.get('genres'):
-                        genres = artist_data['genres'][:5]  # Limit to top 5 genres
+                        genres = artist_data['genres'][:10]  # Limit to top 10 genres
                         if genres:
                             from shared.utils import build_multi_select_options
                             genre_options = build_multi_select_options(
                                 genres,
-                                limit=5,
+                                limit=10,
                                 context="genres"
                             )
                             if genre_options:
