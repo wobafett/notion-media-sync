@@ -5179,6 +5179,7 @@ class NotionMusicBrainzSync:
         # Create/find album
         album_page_id = None
         album_mbid = None
+        album_spotify_id = album_data.get('id', '') if album_data else ''
         if album_name:
             # Search for album by UPC if available
             album_external_ids = self.mb._extract_external_ids(album_data)
@@ -5195,7 +5196,7 @@ class NotionMusicBrainzSync:
             album_page_id = self._find_or_create_album_page(album_name, album_mbid, artist_name=artists_data[0].get('name') if artists_data else None, set_dns=True)
             
             # Set Spotify URL on the album page
-            if album_page_id:
+            if album_page_id and album_spotify_id:
                 album_spotify_url = f"https://open.spotify.com/album/{album_spotify_id}"
                 spotify_prop_id = self.albums_properties.get('listen')
                 if spotify_prop_id:
