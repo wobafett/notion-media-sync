@@ -2843,6 +2843,8 @@ class NotionMusicBrainzSync:
         """Format MusicBrainz release data for Notion properties."""
         properties = {}
         
+        logger.info(f"[FORMAT-ALBUM] Formatting album: title={release_data.get('title')}, id={release_data.get('id')}, has_release_group={bool(release_data.get('release-group'))}")
+        
         try:
             # Title
             if release_data.get('title') and self.albums_properties.get('title'):
@@ -3016,8 +3018,11 @@ class NotionMusicBrainzSync:
             if release_data.get('release-group') and release_data['release-group'].get('primary-type') and self.albums_properties.get('type'):
                 album_type = release_data['release-group']['primary-type']
                 prop_key = self._get_property_key(self.albums_properties['type'], 'albums')
+                logger.info(f"[FORMAT-ALBUM] Album type: {album_type}, prop_key={prop_key}")
                 if prop_key:
                     properties[prop_key] = {'select': {'name': album_type}}
+            else:
+                logger.info(f"[FORMAT-ALBUM] Album type NOT set: has_rg={bool(release_data.get('release-group'))}, has_type={bool(release_data.get('release-group', {}).get('primary-type'))}, has_prop={bool(self.albums_properties.get('type'))}")
             
             # Spotify link (from url-rels) - check for both "streaming" and "free streaming"
             # Only write Spotify URL if it wasn't provided as input
@@ -3062,8 +3067,11 @@ class NotionMusicBrainzSync:
             if release_data.get('id') and self.albums_properties.get('musicbrainz_url'):
                 mb_url = f"https://musicbrainz.org/release/{release_data['id']}"
                 prop_key = self._get_property_key(self.albums_properties['musicbrainz_url'], 'albums')
+                logger.info(f"[FORMAT-ALBUM] MB URL: {mb_url}, prop_key={prop_key}")
                 if prop_key:
                     properties[prop_key] = {'url': mb_url}
+            else:
+                logger.info(f"[FORMAT-ALBUM] MB URL NOT set: has_id={bool(release_data.get('id'))}, has_prop={bool(self.albums_properties.get('musicbrainz_url'))}")
             
             # Last updated
             if self.albums_properties.get('last_updated'):
@@ -3072,8 +3080,9 @@ class NotionMusicBrainzSync:
                     properties[prop_key] = {'date': {'start': datetime.now().isoformat()}}
             
         except Exception as e:
-            logger.error(f"Error formatting album properties: {e}")
+            logger.error(f"Error formatting album properties: {e}", exc_info=True)
         
+        logger.info(f"[FORMAT-ALBUM] Formatted {len(properties)} properties")
         return properties
     
     def _find_existing_page_by_mbid(self, database_id: str, mbid: str, mbid_prop_key: str) -> Optional[str]:
@@ -5204,6 +5213,7 @@ class NotionMusicBrainzSync:
             artist_page_id = self._find_or_create_artist_page(artist_name, artist_mbid, set_dns=True)
         
         # Create the song page with DNS=True for Spotify URL flow
+        logger.info(f"[TRACK-CREATE] Creating song: {track_name}, mbid={song_mbid}, spotify_url={spotify_url}")
         song_page_id = self._find_or_create_song_page(
             track_name,
             song_mbid,
@@ -5211,6 +5221,22 @@ class NotionMusicBrainzSync:
             artist_page_id,
             set_dns=True
         )
+        
+        # Populate Spotify URL on the song page
+        if song_page_id and spotify_url:
+            logger.info(f"[TRACK-CREATE] Adding Spotify URL to song page")
+            spotify_prop_id = self.songs_properties.get('listen')
+            if spotify_prop_id:
+                spotify_key = self._get_property_key(spotify_prop_id, 'songs')
+                if spotify_key:
+                    self.notion.update_page(song_page_id, {
+                        spotify_key: {'url': spotify_url}
+                    })
+                    logger.info(f"[TRACK-CREATE] Spotify URL added")
+                else:
+                    logger.warning(f"[TRACK-CREATE] Spotify key not found for property {spotify_prop_id}")
+            else:
+                logger.warning(f"[TRACK-CREATE] Spotify property 'listen' not found in songs_properties")
         
         if not song_page_id:
             return {
