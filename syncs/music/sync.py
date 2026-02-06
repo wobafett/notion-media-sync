@@ -1351,9 +1351,16 @@ class NotionMusicBrainzSync:
     
     def _fetch_artist_data_by_mbid_or_name(self, artist_name: str, artist_mbid: Optional[str]) -> Optional[Dict]:
         """Fetch full artist data from MusicBrainz by MBID or name search."""
+        # #region agent log
+        import json
+        with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f: f.write(json.dumps({'location':'sync.py:_fetch_artist_data','message':'Fetch artist data called','data':{'artist_name':artist_name,'artist_mbid':artist_mbid},'timestamp':__import__('time').time()*1000,'sessionId':'debug-session','hypothesisId':'H2'}) + '\n')
+        # #endregion
         if artist_mbid:
             artist_data = self.mb.get_artist(artist_mbid)
             if artist_data:
+                # #region agent log
+                with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f: f.write(json.dumps({'location':'sync.py:_fetch_artist_data','message':'Artist data found by MBID','data':{'artist_name':artist_name,'has_data':True,'data_keys':list(artist_data.keys()) if artist_data else []},'timestamp':__import__('time').time()*1000,'sessionId':'debug-session','hypothesisId':'H2'}) + '\n')
+                # #endregion
                 return artist_data
             logger.warning(f"Could not find artist with MBID {artist_mbid}, falling back to name search")
         
@@ -1361,9 +1368,16 @@ class NotionMusicBrainzSync:
         search_results = self.mb.search_artists(artist_name, limit=5)
         if search_results:
             best_match = search_results[0]
-            return self.mb.get_artist(best_match['id'])
+            result = self.mb.get_artist(best_match['id'])
+            # #region agent log
+            with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f: f.write(json.dumps({'location':'sync.py:_fetch_artist_data','message':'Artist data found by search','data':{'artist_name':artist_name,'has_data':bool(result),'data_keys':list(result.keys()) if result else []},'timestamp':__import__('time').time()*1000,'sessionId':'debug-session','hypothesisId':'H2'}) + '\n')
+            # #endregion
+            return result
         
         logger.warning(f"Could not find artist data for: {artist_name}")
+        # #region agent log
+        with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f: f.write(json.dumps({'location':'sync.py:_fetch_artist_data','message':'No artist data found','data':{'artist_name':artist_name},'timestamp':__import__('time').time()*1000,'sessionId':'debug-session','hypothesisId':'H2'}) + '\n')
+        # #endregion
         return None
     
     def _fetch_album_data_by_mbid_or_name(self, album_title: str, album_mbid: Optional[str], artist_name: Optional[str] = None) -> Optional[Dict]:
@@ -3210,17 +3224,34 @@ class NotionMusicBrainzSync:
             artist_props = {}
             if artist_data:
                 artist_props = self._format_artist_properties(artist_data)
+                # #region agent log
+                import json
+                with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f: f.write(json.dumps({'location':'sync.py:_find_or_create_artist','message':'Formatted artist properties','data':{'artist_name':artist_name,'props_count':len(artist_props),'prop_keys':list(artist_props.keys())},'timestamp':__import__('time').time()*1000,'sessionId':'debug-session','hypothesisId':'H3'}) + '\n')
+                # #endregion
             else:
                 # Minimal fallback if no MusicBrainz data found
                 artist_props[title_key] = {'title': [{'text': {'content': artist_name}}]}
+                # #region agent log
+                with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f: f.write(json.dumps({'location':'sync.py:_find_or_create_artist','message':'No artist data, using fallback','data':{'artist_name':artist_name},'timestamp':__import__('time').time()*1000,'sessionId':'debug-session','hypothesisId':'H2'}) + '\n')
+                # #endregion
             
             # Set DNS checkbox if requested (Spotify URL flow sets this to prevent automation cascade)
+            # #region agent log
+            dns_prop_id = self.artists_properties.get('dns')
+            dns_key = self._get_property_key(dns_prop_id, 'artists')
+            with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f: f.write(json.dumps({'location':'sync.py:_find_or_create_artist','message':'DNS checkbox handling','data':{'set_dns':set_dns,'dns_prop_id':dns_prop_id,'dns_key':dns_key},'timestamp':__import__('time').time()*1000,'sessionId':'debug-session','hypothesisId':'H1,H4'}) + '\n')
+            # #endregion
             if set_dns:
-                dns_key = self._get_property_key(self.artists_properties.get('dns'), 'artists')
                 if dns_key:
                     artist_props[dns_key] = {'checkbox': True}
+                    # #region agent log
+                    with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f: f.write(json.dumps({'location':'sync.py:_find_or_create_artist','message':'DNS checkbox set in props','data':{'dns_key':dns_key,'props_count_after':len(artist_props)},'timestamp':__import__('time').time()*1000,'sessionId':'debug-session','hypothesisId':'H4'}) + '\n')
+                    # #endregion
             
             # Create page with everything in one call
+            # #region agent log
+            with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f: f.write(json.dumps({'location':'sync.py:_find_or_create_artist','message':'About to create artist page','data':{'artist_name':artist_name,'props_count':len(artist_props),'has_dns_in_props':dns_key in artist_props if dns_key else False},'timestamp':__import__('time').time()*1000,'sessionId':'debug-session','hypothesisId':'H5'}) + '\n')
+            # #endregion
             artist_page_id = self.notion.create_page(
                 self.artists_db_id,
                 artist_props,
@@ -5147,6 +5178,10 @@ class NotionMusicBrainzSync:
                     logger.info(f"Found MusicBrainz artist: {artist_mbid}")
             
             # Set DNS=True for Spotify URL flow to prevent automation cascade
+            # #region agent log
+            import json
+            with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f: f.write(json.dumps({'location':'sync.py:_create_track_from_spotify','message':'Calling _find_or_create_artist_page with set_dns=True','data':{'artist_name':artist_name,'artist_mbid':artist_mbid,'set_dns':True},'timestamp':__import__('time').time()*1000,'sessionId':'debug-session','hypothesisId':'H5'}) + '\n')
+            # #endregion
             artist_page_id = self._find_or_create_artist_page(artist_name, artist_mbid, set_dns=True)
         
         # Create the song page with DNS=True for Spotify URL flow
