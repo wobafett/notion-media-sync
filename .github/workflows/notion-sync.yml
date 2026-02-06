@@ -111,8 +111,15 @@ jobs:
           if [ -n "${{ inputs.spotify_url }}" ]; then args+=('--spotify-url' "${{ inputs.spotify_url }}"); fi
           python3 webhook.py --page-id "${{ inputs.page_id }}" "${args[@]}"
 
+      - name: Create from Spotify URL
+        if: inputs.page_id == '' && inputs.spotify_url != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 webhook.py --spotify-url "${{ inputs.spotify_url }}"
+
       - name: Run target sync
-        if: inputs.page_id == ''
+        if: inputs.page_id == '' && inputs.spotify_url == ''
         shell: bash
         run: |
           set -euo pipefail

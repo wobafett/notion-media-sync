@@ -44,23 +44,54 @@ Add these secrets to your GitHub repository (`Settings > Secrets and variables >
 
 #### Spotify URL Input (Music Syncs)
 
-The `spotify_url` workflow input enables accurate music identification:
+The `spotify_url` workflow input enables two powerful capabilities:
 
-- **What it does**: Uses Spotify API to extract ISRC/UPC/EAN identifiers, then matches them to MusicBrainz entries
-- **When to use**: When you want precise matching for songs, albums, or artists
-- **How it works**:
-  1. Extracts metadata from Spotify (track info, album barcodes, artist IDs)
-  2. Searches MusicBrainz using external IDs (much more accurate than name search)
-  3. Falls back to name-based search if external ID not found
-- **Property behavior**: The "Spotify" property serves dual purpose:
-  - **Input**: If filled, reads and uses for identification
-  - **Output**: If empty, writes found URL after sync
-  - User-provided URLs are preserved (not overwritten)
+##### 🆕 1. Create New Pages from Spotify URLs
 
-**Example workflow runs:**
-- Track: `spotify_url: "https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6"`
-- Album: `spotify_url: "https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy"`
-- Artist: `spotify_url: "https://open.spotify.com/artist/0OdUWJ0sBjDrqHygGUXeCF"`
+**No manual page creation needed** - just provide the Spotify URL and the system will:
+- Parse the URL to identify type (track/album/artist)
+- Fetch metadata from Spotify API
+- Search MusicBrainz for additional metadata
+- Check for duplicates in Notion
+- Create new page with full metadata
+- Automatically create related entities:
+  - **Track** → creates/links album, artist, label
+  - **Album** → creates/links artist, label
+  - **Artist** → standalone creation
+
+**Example workflow runs (creation mode):**
+```yaml
+# Create new track page
+page_id: (leave empty)
+spotify_url: "https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6"
+
+# Create new album page
+page_id: (leave empty)
+spotify_url: "https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy"
+
+# Create new artist page
+page_id: (leave empty)
+spotify_url: "https://open.spotify.com/artist/0OdUWJ0sBjDrqHygGUXeCF"
+```
+
+##### 2. Enhance Existing Page Matching
+
+**Improve accuracy** for pages you've already created:
+- Uses Spotify API to extract ISRC/UPC/EAN identifiers
+- Matches them to MusicBrainz entries (more accurate than name search)
+- Falls back to name-based search if external ID not found
+
+**Example workflow runs (update mode):**
+```yaml
+# Update existing page with Spotify data
+page_id: "abc123xyz"
+spotify_url: "https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6"
+```
+
+**Property behavior:** The "Spotify" property serves dual purpose:
+- **Input**: If filled, reads and uses for identification
+- **Output**: If empty, writes found URL after sync
+- User-provided URLs are preserved (not overwritten)
 
 ### 🛠️ Setup Instructions
 

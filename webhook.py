@@ -17,14 +17,14 @@ logger = get_logger(__name__)
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Route a single Notion page to the correct sync target")
-    parser.add_argument("--page-id", required=True, help="Notion page ID to sync")
+    parser.add_argument("--page-id", required=False, help="Notion page ID to sync (optional if --spotify-url is provided)")
     parser.add_argument("--force-icons", action="store_true", help="Force update page icons if supported")
     parser.add_argument("--force-all", action="store_true", help="Process page even if marked complete")
     parser.add_argument("--force-update", action="store_true", help="Movies/books targets: force update completed entries")
     parser.add_argument("--force-research", action="store_true", help="Books target: re-search even when IDs exist")
     parser.add_argument("--force-scraping", action="store_true", help="Books target: force ComicVine scraping")
     parser.add_argument("--dry-run", action="store_true", help="Books target: simulate sync without writing to Notion")
-    parser.add_argument("--spotify-url", type=str, help="Music target: Spotify URL for identification (track, album, or artist)")
+    parser.add_argument("--spotify-url", type=str, help="Music target: Spotify URL to create new page (track, album, or artist)")
     return parser
 
 
@@ -36,11 +36,45 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
 
+    # Validation: require either page_id or spotify_url
+    if not args.page_id and not args.spotify_url:
+        logger.error("Either --page-id or --spotify-url must be provided")
+        sys.exit(1)
+
     notion_token = get_notion_token()
     if not notion_token:
         logger.error("NOTION_INTERNAL_INTEGRATION_SECRET (or NOTION_TOKEN) must be set")
         sys.exit(1)
 
+    # Spotify URL-only mode: create new page from URL
+    if args.spotify_url and not args.page_id:
+        logger.info("Spotify URL creation mode: %s", args.spotify_url)
+        target = router.get_target("music")
+        if not target:
+            logger.error("Music target not available")
+            sys.exit(1)
+        
+        if not target.validate_environment():
+            sys.exit(1)
+        
+        try:
+            result = target.run_sync(spotify_url=args.spotify_url)
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error("Spotify URL creation failed: %s", exc)
+            raise
+        
+        if result.get("success"):
+            logger.info("Successfully created page from Spotify URL")
+            logger.info("Entity: %s | Page ID: %s | Created: %s",
+                        result.get("entity_type", "unknown"),
+                        result.get("page_id", "unknown"),
+                        result.get("created", False))
+            sys.exit(0)
+        
+        logger.error("Failed to create page from Spotify URL: %s", result.get("message", "Unknown error"))
+        sys.exit(1)
+
+    # Standard page-specific mode
     notion = NotionAPI(notion_token)
     page = notion.get_page(args.page_id)
     if not page:

@@ -3005,6 +3005,46 @@ class NotionMusicBrainzSync:
         
         return properties
     
+    def _find_existing_page_by_mbid(self, database_id: str, mbid: str, mbid_prop_key: str) -> Optional[str]:
+        """Search for an existing page by MusicBrainz ID."""
+        if not database_id or not mbid or not mbid_prop_key:
+            return None
+        
+        try:
+            filter_params = {
+                'property': mbid_prop_key,
+                'rich_text': {
+                    'equals': mbid
+                }
+            }
+            existing_pages = self.notion.query_database(database_id, filter_params)
+            if existing_pages:
+                return existing_pages[0]['id']
+        except Exception as e:
+            logger.debug(f"Error searching for page by MBID: {e}")
+        
+        return None
+    
+    def _find_existing_page_by_spotify_url(self, database_id: str, spotify_url: str, spotify_prop_key: str) -> Optional[str]:
+        """Search for an existing page by Spotify URL."""
+        if not database_id or not spotify_url or not spotify_prop_key:
+            return None
+        
+        try:
+            filter_params = {
+                'property': spotify_prop_key,
+                'url': {
+                    'equals': spotify_url
+                }
+            }
+            existing_pages = self.notion.query_database(database_id, filter_params)
+            if existing_pages:
+                return existing_pages[0]['id']
+        except Exception as e:
+            logger.debug(f"Error searching for page by Spotify URL: {e}")
+        
+        return None
+    
     def _find_or_create_artist_page(self, artist_name: str, artist_mbid: Optional[str] = None) -> Optional[str]:
         """Find or create an artist page in the Artists database and return its page ID."""
         if not self.artists_db_id:
@@ -3626,6 +3666,143 @@ class NotionMusicBrainzSync:
             
         except Exception as e:
             logger.error(f"Error finding/creating location page for '{location_name}': {e}")
+            return None
+    
+    def _find_or_create_song_page(self, song_title: str, song_mbid: Optional[str] = None, 
+                                   album_page_id: Optional[str] = None, 
+                                   artist_page_id: Optional[str] = None) -> Optional[str]:
+        """Find or create a song page in the Songs database and return its page ID."""
+        if not self.songs_db_id:
+            return None
+        
+        try:
+            normalized_mbid = self._normalize_mbid(song_mbid)
+            if normalized_mbid:
+                cached_page = self._song_mbid_map.get(normalized_mbid)
+                if cached_page:
+                    return cached_page
+            
+            # First, try to find existing song by title
+            title_prop_id = self.songs_properties.get('title')
+            mbid_prop_id = self.songs_properties.get('musicbrainz_id')
+            if not title_prop_id:
+                return None
+            
+            title_key = self._get_property_key(title_prop_id, 'songs')
+            if not title_key:
+                return None
+            
+            # Search for existing song page by title
+            filter_params = {
+                'property': title_key,
+                'title': {
+                    'equals': song_title
+                }
+            }
+            
+            existing_pages = self.notion.query_database(self.songs_db_id, filter_params)
+            
+            if existing_pages:
+                page = existing_pages[0]
+                song_page_id = page['id']
+                if normalized_mbid:
+                    self._persist_mbid_on_page(
+                        'songs',
+                        page,
+                        song_page_id,
+                        song_mbid,
+                        mbid_prop_id,
+                        self._song_mbid_map,
+                    )
+                return song_page_id
+            
+            # If no exact match, try searching all pages and match by name (case-insensitive)
+            all_pages = self._get_database_pages(self.songs_db_id)
+            for page in all_pages:
+                page_props = page.get('properties', {})
+                page_title_prop = page_props.get(title_key, {})
+                if page_title_prop.get('title') and page_title_prop['title']:
+                    page_title = page_title_prop['title'][0]['plain_text']
+                    if page_title.lower() == song_title.lower():
+                        page_id = page['id']
+                        if normalized_mbid:
+                            self._persist_mbid_on_page(
+                                'songs',
+                                page,
+                                page_id,
+                                song_mbid,
+                                mbid_prop_id,
+                                self._song_mbid_map,
+                            )
+                        else:
+                            mbid_prop_key = self._get_property_key(mbid_prop_id, 'songs')
+                            if mbid_prop_key:
+                                existing_mbid = self._extract_rich_text_plain(page_props.get(mbid_prop_key))
+                                self._register_mbid(self._song_mbid_map, existing_mbid, page_id)
+                        return page['id']
+            
+            # Song doesn't exist - create it
+            logger.info(f"Creating new song page: {song_title}")
+            
+            # Get song data from MusicBrainz if we have MBID
+            song_data = None
+            if song_mbid:
+                song_data = self.mb.get_recording(song_mbid)
+            
+            # Format properties for new song
+            song_props = {}
+            song_props[title_key] = {
+                'title': [{'text': {'content': song_title}}]
+            }
+            
+            mbid_to_store = None
+            if song_data and song_data.get('id'):
+                mbid_to_store = song_data['id']
+            elif song_mbid:
+                mbid_to_store = song_mbid
+            
+            if mbid_to_store and self.songs_properties.get('musicbrainz_id'):
+                mb_id_key = self._get_property_key(self.songs_properties['musicbrainz_id'], 'songs')
+                if mb_id_key:
+                    song_props[mb_id_key] = {
+                        'rich_text': [{'text': {'content': mbid_to_store}}]
+                    }
+            
+            # Add relations if provided
+            if album_page_id and self.songs_properties.get('album'):
+                album_key = self._get_property_key(self.songs_properties['album'], 'songs')
+                if album_key:
+                    song_props[album_key] = {
+                        'relation': [{'id': album_page_id}]
+                    }
+            
+            if artist_page_id and self.songs_properties.get('artist'):
+                artist_key = self._get_property_key(self.songs_properties['artist'], 'songs')
+                if artist_key:
+                    song_props[artist_key] = {
+                        'relation': [{'id': artist_page_id}]
+                    }
+            
+            # Create the song page
+            song_page_id = self.notion.create_page(
+                self.songs_db_id,
+                song_props,
+                None,
+                '🎵'  # Music note emoji
+            )
+            
+            if song_page_id:
+                logger.info(f"Created song page: {song_title} (ID: {song_page_id})")
+                # If we have full song data, update the page with it
+                if song_data:
+                    full_props = self._format_song_properties(song_data)
+                    self.notion.update_page(song_page_id, full_props)
+                self._register_mbid(self._song_mbid_map, mbid_to_store, song_page_id)
+            
+            return song_page_id
+            
+        except Exception as e:
+            logger.error(f"Error finding/creating song page for '{song_title}': {e}")
             return None
     
     def sync_song_page(self, page: Dict, force_all: bool = False, spotify_url: str = None) -> Optional[bool]:
@@ -4731,13 +4908,332 @@ class NotionMusicBrainzSync:
         logger.info(f"Finished page-specific sync for {db_name} page {page_id}")
         return results
     
+    def create_from_spotify_url(self, spotify_url: str) -> Dict:
+        """Create a new Notion page from a Spotify URL.
+        
+        Args:
+            spotify_url: Spotify URL for a track, album, or artist
+            
+        Returns:
+            Dict with keys: success, message, page_id, entity_type, created
+        """
+        logger.info(f"Creating page from Spotify URL: {spotify_url}")
+        
+        # Parse Spotify URL
+        parsed = self._parse_spotify_url(spotify_url)
+        if not parsed:
+            return {
+                'success': False,
+                'message': f'Invalid Spotify URL format: {spotify_url}'
+            }
+        
+        entity_type = parsed['type']
+        spotify_id = parsed['id']
+        
+        logger.info(f"Detected Spotify {entity_type}: {spotify_id}")
+        
+        # Fetch Spotify data based on type
+        spotify_data = None
+        if entity_type == 'track':
+            spotify_data = self._get_spotify_track_by_id(spotify_id)
+        elif entity_type == 'album':
+            spotify_data = self._get_spotify_album_by_id(spotify_id)
+        elif entity_type == 'artist':
+            spotify_data = self._get_spotify_artist_by_id(spotify_id)
+        
+        if not spotify_data:
+            return {
+                'success': False,
+                'message': f'Could not fetch {entity_type} data from Spotify'
+            }
+        
+        # Extract basic info
+        name = spotify_data.get('name', '')
+        if not name:
+            return {
+                'success': False,
+                'message': f'No name found in Spotify {entity_type} data'
+            }
+        
+        # Handle creation based on entity type
+        if entity_type == 'track':
+            return self._create_track_from_spotify(spotify_data, spotify_url)
+        elif entity_type == 'album':
+            return self._create_album_from_spotify(spotify_data, spotify_url)
+        elif entity_type == 'artist':
+            return self._create_artist_from_spotify(spotify_data, spotify_url)
+        
+        return {
+            'success': False,
+            'message': f'Unsupported entity type: {entity_type}'
+        }
+    
+    def _create_track_from_spotify(self, spotify_data: Dict, spotify_url: str) -> Dict:
+        """Create a track page from Spotify data."""
+        track_name = spotify_data.get('name', '')
+        
+        # Extract external IDs
+        external_ids = self._extract_external_ids(spotify_data)
+        isrc = external_ids.get('isrc')
+        
+        # Search MusicBrainz by ISRC
+        mb_recording = None
+        song_mbid = None
+        if isrc:
+            logger.info(f"Searching MusicBrainz by ISRC: {isrc}")
+            mb_recording = self.mb.search_recording_by_isrc(isrc)
+            if mb_recording:
+                song_mbid = mb_recording.get('id')
+                logger.info(f"Found MusicBrainz recording: {song_mbid}")
+        
+        # Check if song already exists in Notion
+        if song_mbid:
+            mbid_key = self._get_property_key(self.songs_properties.get('musicbrainz_id'), 'songs')
+            if mbid_key:
+                existing_page_id = self._find_existing_page_by_mbid(self.songs_db_id, song_mbid, mbid_key)
+                if existing_page_id:
+                    logger.info(f"Song already exists in Notion: {existing_page_id}")
+                    # Update the existing page
+                    page = self.notion.get_page(existing_page_id)
+                    if page:
+                        self.sync_song_page(page, force_all=True, spotify_url=spotify_url)
+                    return {
+                        'success': True,
+                        'message': f'Updated existing song: {track_name}',
+                        'page_id': existing_page_id,
+                        'entity_type': 'song',
+                        'created': False
+                    }
+        
+        # Check by Spotify URL
+        spotify_key = self._get_property_key(self.songs_properties.get('listen'), 'songs')
+        if spotify_key:
+            existing_page_id = self._find_existing_page_by_spotify_url(self.songs_db_id, spotify_url, spotify_key)
+            if existing_page_id:
+                logger.info(f"Song already exists in Notion (by Spotify URL): {existing_page_id}")
+                return {
+                    'success': True,
+                    'message': f'Song already exists: {track_name}',
+                    'page_id': existing_page_id,
+                    'entity_type': 'song',
+                    'created': False
+                }
+        
+        # Extract album and artist info
+        album_data = spotify_data.get('album', {})
+        album_name = album_data.get('name', '')
+        artists_data = spotify_data.get('artists', [])
+        
+        # Create/find album
+        album_page_id = None
+        album_mbid = None
+        if album_name:
+            # Search for album by UPC if available
+            album_external_ids = self._extract_external_ids(album_data)
+            upc = album_external_ids.get('upc') or album_external_ids.get('ean')
+            if upc:
+                logger.info(f"Searching MusicBrainz for album by barcode: {upc}")
+                mb_release = self.mb.search_release_by_barcode(upc)
+                if mb_release:
+                    album_mbid = mb_release.get('id')
+                    logger.info(f"Found MusicBrainz release: {album_mbid}")
+            
+            album_page_id = self._find_or_create_album_page(album_name, album_mbid)
+        
+        # Create/find artist
+        artist_page_id = None
+        if artists_data:
+            artist_name = artists_data[0].get('name', '')
+            artist_spotify_id = artists_data[0].get('id', '')
+            artist_mbid = None
+            
+            # Try to find artist in MusicBrainz by Spotify ID
+            if artist_spotify_id:
+                mb_artist = self.mb.get_artist_by_spotify_id(artist_spotify_id)
+                if mb_artist:
+                    artist_mbid = mb_artist.get('id')
+                    logger.info(f"Found MusicBrainz artist: {artist_mbid}")
+            
+            artist_page_id = self._find_or_create_artist_page(artist_name, artist_mbid)
+        
+        # Create the song page
+        song_page_id = self._find_or_create_song_page(
+            track_name,
+            song_mbid,
+            album_page_id,
+            artist_page_id
+        )
+        
+        if not song_page_id:
+            return {
+                'success': False,
+                'message': f'Failed to create song page: {track_name}'
+            }
+        
+        # Now sync the page to populate all fields
+        page = self.notion.get_page(song_page_id)
+        if page:
+            self.sync_song_page(page, force_all=True, spotify_url=spotify_url)
+        
+        return {
+            'success': True,
+            'message': f'Created song: {track_name}',
+            'page_id': song_page_id,
+            'entity_type': 'song',
+            'created': True
+        }
+    
+    def _create_album_from_spotify(self, spotify_data: Dict, spotify_url: str) -> Dict:
+        """Create an album page from Spotify data."""
+        album_name = spotify_data.get('name', '')
+        
+        # Extract external IDs
+        external_ids = self._extract_external_ids(spotify_data)
+        upc = external_ids.get('upc') or external_ids.get('ean')
+        
+        # Search MusicBrainz by barcode
+        mb_release = None
+        album_mbid = None
+        if upc:
+            logger.info(f"Searching MusicBrainz by barcode: {upc}")
+            mb_release = self.mb.search_release_by_barcode(upc)
+            if mb_release:
+                album_mbid = mb_release.get('id')
+                logger.info(f"Found MusicBrainz release: {album_mbid}")
+        
+        # Check if album already exists in Notion
+        if album_mbid:
+            mbid_key = self._get_property_key(self.albums_properties.get('musicbrainz_id'), 'albums')
+            if mbid_key:
+                existing_page_id = self._find_existing_page_by_mbid(self.albums_db_id, album_mbid, mbid_key)
+                if existing_page_id:
+                    logger.info(f"Album already exists in Notion: {existing_page_id}")
+                    # Update the existing page
+                    page = self.notion.get_page(existing_page_id)
+                    if page:
+                        self.sync_album_page(page, force_all=True, spotify_url=spotify_url)
+                    return {
+                        'success': True,
+                        'message': f'Updated existing album: {album_name}',
+                        'page_id': existing_page_id,
+                        'entity_type': 'album',
+                        'created': False
+                    }
+        
+        # Check by Spotify URL
+        spotify_key = self._get_property_key(self.albums_properties.get('listen'), 'albums')
+        if spotify_key:
+            existing_page_id = self._find_existing_page_by_spotify_url(self.albums_db_id, spotify_url, spotify_key)
+            if existing_page_id:
+                logger.info(f"Album already exists in Notion (by Spotify URL): {existing_page_id}")
+                return {
+                    'success': True,
+                    'message': f'Album already exists: {album_name}',
+                    'page_id': existing_page_id,
+                    'entity_type': 'album',
+                    'created': False
+                }
+        
+        # Create the album page
+        album_page_id = self._find_or_create_album_page(album_name, album_mbid)
+        
+        if not album_page_id:
+            return {
+                'success': False,
+                'message': f'Failed to create album page: {album_name}'
+            }
+        
+        # Now sync the page to populate all fields
+        page = self.notion.get_page(album_page_id)
+        if page:
+            self.sync_album_page(page, force_all=True, spotify_url=spotify_url)
+        
+        return {
+            'success': True,
+            'message': f'Created album: {album_name}',
+            'page_id': album_page_id,
+            'entity_type': 'album',
+            'created': True
+        }
+    
+    def _create_artist_from_spotify(self, spotify_data: Dict, spotify_url: str) -> Dict:
+        """Create an artist page from Spotify data."""
+        artist_name = spotify_data.get('name', '')
+        artist_spotify_id = spotify_data.get('id', '')
+        
+        # Search MusicBrainz by Spotify ID
+        mb_artist = None
+        artist_mbid = None
+        if artist_spotify_id:
+            logger.info(f"Searching MusicBrainz by Spotify ID: {artist_spotify_id}")
+            mb_artist = self.mb.get_artist_by_spotify_id(artist_spotify_id)
+            if mb_artist:
+                artist_mbid = mb_artist.get('id')
+                logger.info(f"Found MusicBrainz artist: {artist_mbid}")
+        
+        # Check if artist already exists in Notion
+        if artist_mbid:
+            mbid_key = self._get_property_key(self.artists_properties.get('musicbrainz_id'), 'artists')
+            if mbid_key:
+                existing_page_id = self._find_existing_page_by_mbid(self.artists_db_id, artist_mbid, mbid_key)
+                if existing_page_id:
+                    logger.info(f"Artist already exists in Notion: {existing_page_id}")
+                    # Update the existing page
+                    page = self.notion.get_page(existing_page_id)
+                    if page:
+                        self.sync_artist_page(page, force_all=True, spotify_url=spotify_url)
+                    return {
+                        'success': True,
+                        'message': f'Updated existing artist: {artist_name}',
+                        'page_id': existing_page_id,
+                        'entity_type': 'artist',
+                        'created': False
+                    }
+        
+        # Check by Spotify URL
+        spotify_key = self._get_property_key(self.artists_properties.get('streaming_link'), 'artists')
+        if spotify_key:
+            existing_page_id = self._find_existing_page_by_spotify_url(self.artists_db_id, spotify_url, spotify_key)
+            if existing_page_id:
+                logger.info(f"Artist already exists in Notion (by Spotify URL): {existing_page_id}")
+                return {
+                    'success': True,
+                    'message': f'Artist already exists: {artist_name}',
+                    'page_id': existing_page_id,
+                    'entity_type': 'artist',
+                    'created': False
+                }
+        
+        # Create the artist page
+        artist_page_id = self._find_or_create_artist_page(artist_name, artist_mbid)
+        
+        if not artist_page_id:
+            return {
+                'success': False,
+                'message': f'Failed to create artist page: {artist_name}'
+            }
+        
+        # Now sync the page to populate all fields
+        page = self.notion.get_page(artist_page_id)
+        if page:
+            self.sync_artist_page(page, force_all=True, spotify_url=spotify_url)
+        
+        return {
+            'success': True,
+            'message': f'Created artist: {artist_name}',
+            'page_id': artist_page_id,
+            'entity_type': 'artist',
+            'created': True
+        }
+    
     def run_sync(
         self,
         database: str = 'all',
         force_all: bool = False,
         last_page: bool = False,
         created_after: Optional[str] = None,
-        page_id: Optional[str] = None
+        page_id: Optional[str] = None,
+        spotify_url: Optional[str] = None
     ) -> Dict:
         """Run the synchronization process for specified database(s).
         
@@ -4747,7 +5243,13 @@ class NotionMusicBrainzSync:
             last_page: Only process the most recently edited page
             created_after: ISO timestamp string to filter pages by creation date
             page_id: Explicit Notion page ID to sync
+            spotify_url: Spotify URL to create new page from (track, album, or artist)
         """
+        # Handle Spotify URL creation mode (no page_id required)
+        if spotify_url and not page_id:
+            logger.info(f"Spotify URL creation mode: {spotify_url}")
+            return self.create_from_spotify_url(spotify_url)
+        
         logger.info(f"Starting Notion-MusicBrainz synchronization (database: {database})")
         
         if page_id:
@@ -4917,9 +5419,14 @@ def run_sync(
     force_all: bool = False,
     last_page: bool = False,
     created_after: Optional[str] = None,
-    page_id: Optional[str] = None
+    page_id: Optional[str] = None,
+    spotify_url: Optional[str] = None
 ) -> Dict:
     """Run the MusicBrainz sync with the provided options."""
+    # Spotify URL creation mode takes precedence
+    if spotify_url and not page_id:
+        return _build_sync_instance().run_sync(spotify_url=spotify_url)
+    
     is_repo_dispatch = os.getenv('GITHUB_EVENT_NAME') == 'repository_dispatch'
     if is_repo_dispatch and not page_id:
         if database == 'all':
@@ -4952,7 +5459,8 @@ def run_sync(
         force_all=force_all,
         last_page=last_page,
         created_after=normalized_created_after,
-        page_id=page_id
+        page_id=page_id,
+        spotify_url=spotify_url
     )
 
 

@@ -82,40 +82,52 @@ Manual dispatch lets you test the router/webhook end-to-end in the cloud without
 
 ### Spotify URL Input (Music Syncs Only)
 
-For music syncs, you can now provide Spotify URLs to improve matching accuracy:
+For music syncs, you can now provide Spotify URLs for two purposes:
+1. **Create new pages** directly from Spotify URLs (no manual page creation needed)
+2. **Improve matching accuracy** for existing pages
 
-**How it works:**
-1. **Input Methods:**
-   - Paste a Spotify URL into the "Spotify" property in Notion
-   - Pass `--spotify-url` parameter via CLI or workflow
-   - Include `spotify_url` in Make.com webhook payload
-
-2. **Matching Process:**
-   - **Songs**: Extracts ISRC from Spotify → searches MusicBrainz by ISRC
-   - **Albums**: Extracts UPC/EAN barcode → searches MusicBrainz by barcode
-   - **Artists**: Extracts Spotify ID → searches MusicBrainz by Spotify relationship
-
-3. **Dual-Purpose Property:**
-   - If "Spotify" field is filled → reads and uses for identification
-   - If "Spotify" field is empty → writes the found URL back after syncing
-   - If URL was provided, it's preserved (not overwritten)
-
-4. **Fallback Behavior:**
-   - If Spotify URL not provided → uses standard name-based search
-   - If ISRC/UPC not found → falls back to name-based search
-   - Works seamlessly with existing sync logic
-
-**Example CLI usage:**
+**🆕 Create New Pages from Spotify URLs:**
 ```bash
-# Single song with Spotify URL
-python3 webhook.py --page-id <page_id> --spotify-url "https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6"
+# Create a new song page (and related album, artist, label pages if needed)
+python3 webhook.py --spotify-url "https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6"
 
-# Album with Spotify URL
-python3 webhook.py --page-id <page_id> --spotify-url "https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy"
+# Create a new album page (and related artist, label pages if needed)
+python3 webhook.py --spotify-url "https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy"
 
-# Artist with Spotify URL
-python3 webhook.py --page-id <page_id> --spotify-url "https://open.spotify.com/artist/0OdUWJ0sBjDrqHygGUXeCF"
+# Create a new artist page
+python3 webhook.py --spotify-url "https://open.spotify.com/artist/0OdUWJ0sBjDrqHygGUXeCF"
 ```
+
+**How Creation Works:**
+1. Parses Spotify URL to identify type (track/album/artist)
+2. Fetches metadata from Spotify API
+3. Extracts external IDs (ISRC/UPC) and searches MusicBrainz
+4. Checks for duplicates in Notion (by MBID or Spotify URL)
+5. Creates new page or updates existing one
+6. Automatically creates related entities:
+   - **Track** → creates/links album, artist, label
+   - **Album** → creates/links artist, label
+   - **Artist** → standalone creation
+
+**Enhance Existing Pages:**
+```bash
+# Update existing page with Spotify URL
+python3 webhook.py --page-id <page_id> --spotify-url "https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6"
+```
+
+**Matching Process:**
+- **Songs**: Extracts ISRC from Spotify → searches MusicBrainz by ISRC
+- **Albums**: Extracts UPC/EAN barcode → searches MusicBrainz by barcode
+- **Artists**: Extracts Spotify ID → searches MusicBrainz by Spotify relationship
+
+**Dual-Purpose Property:**
+- If "Spotify" field is filled → reads and uses for identification
+- If "Spotify" field is empty → writes the found URL back after syncing
+- If URL was provided, it's preserved (not overwritten)
+
+**Fallback Behavior:**
+- If ISRC/UPC not found → falls back to name-based search
+- Works seamlessly with existing sync logic
 
 ## 📋 Setup Guide
 
