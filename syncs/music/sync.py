@@ -5458,6 +5458,12 @@ class NotionMusicBrainzSync:
                 'message': f'Failed to create artist page: {artist_name}'
             }
         
+        # Set artist cover image from Spotify (before syncing)
+        if artist_spotify_id:
+            artist_cover_url = self.mb._get_spotify_artist_image(artist_name, artist_mbid, artist_spotify_id)
+            if artist_cover_url:
+                self.notion.update_page(artist_page_id, {}, artist_cover_url)
+        
         # Now sync the page to populate all fields
         page = self.notion.get_page(artist_page_id)
         if page:
