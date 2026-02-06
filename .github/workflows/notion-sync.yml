@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: Optional sync target (required when page_id is empty)
+        description: "Sync target for full database sync (ignored if page_id or spotify_url provided)"
         required: false
         type: choice
         options:
@@ -13,7 +13,7 @@ on:
           - movies
           - books
       page_id:
-        description: Optional Notion page ID for single-page mode (uses webhook router)
+        description: "Notion page ID to update a single page (takes precedence over other inputs)"
         required: false
         type: string
       database:
@@ -50,7 +50,7 @@ on:
         default: false
         type: boolean
       spotify_url:
-        description: Optional Spotify URL (for music syncs only)
+        description: "Spotify URL to create new music page (track/album/artist). Leave page_id and target empty."
         required: false
         type: string
   # schedule:
@@ -97,6 +97,11 @@ jobs:
       - name: Install dependencies
         run: pip install --upgrade pip && pip install -r requirements.txt
 
+      # Three mutually exclusive workflow modes:
+      # 1. Single-page sync: page_id provided (target ignored)
+      # 2. Spotify creation: spotify_url provided without page_id (target ignored)
+      # 3. Database sync: target provided without page_id or spotify_url
+
       - name: Run single-page sync (webhook router)
         if: inputs.page_id != ''
         shell: bash
@@ -124,11 +129,10 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${{ inputs.target }}" ]; then
-            echo "target input is required when page_id is empty. Aborting."
-            exit 1
-          fi
-          if [ -z "${{ inputs.target }}" ]; then
-            echo "Error: target input is required when page_id is not provided."
+            echo "Error: One of the following is required: page_id, spotify_url, or target."
+            echo "  - Use page_id to update a single existing page"
+            echo "  - Use spotify_url to create a new music page from Spotify"
+            echo "  - Use target to run a full database sync"
             exit 1
           fi
           args=(--target "${{ inputs.target }}")
