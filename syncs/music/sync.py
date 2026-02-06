@@ -154,7 +154,7 @@ class MusicBrainzAPI:
         
         self.last_request_time = time.time()
     
-    def _make_api_request(self, url: str, params: Dict = None, max_retries: int = 3) -> requests.Response:
+    def _make_api_request(self, url: str, params: Dict = None, headers: Dict = None, max_retries: int = 3) -> requests.Response:
         """Make an API request with rate limiting and retry logic."""
         if params is None:
             params = {}
@@ -165,7 +165,7 @@ class MusicBrainzAPI:
                 self._rate_limit()
                 
                 # Make the request
-                response = self.session.get(url, params=params)
+                response = self.session.get(url, params=params, headers=headers)
                 
                 # Check for rate limiting (429)
                 if response.status_code == 429:
@@ -493,7 +493,8 @@ class MusicBrainzAPI:
                 'fmt': 'json'
             }
             
-            response = self._make_api_request(url, params)
+            # Use max_retries=0 since 404 is a valid response (ISRC doesn't exist)
+            response = self._make_api_request(url, params, max_retries=0)
             data = response.json()
             
             # ISRC lookup returns a recording directly (not a list)
@@ -526,7 +527,8 @@ class MusicBrainzAPI:
                 'limit': 5
             }
             
-            response = self._make_api_request(url, params)
+            # Use max_retries=0 since 404 is a valid response (barcode doesn't exist)
+            response = self._make_api_request(url, params, max_retries=0)
             data = response.json()
             
             releases = data.get('releases', [])
@@ -561,7 +563,8 @@ class MusicBrainzAPI:
                 'limit': 5
             }
             
-            response = self._make_api_request(url, params)
+            # Use max_retries=0 since no match is a valid response
+            response = self._make_api_request(url, params, max_retries=0)
             data = response.json()
             
             artists = data.get('artists', [])
@@ -959,10 +962,11 @@ class MusicBrainzAPI:
         headers = {"Authorization": f"Bearer {access_token}"}
         
         try:
-            response = self._make_api_request(url, headers=headers, cache=False)
-            if response and response.get("id"):
-                logger.info(f"Fetched Spotify track: {response.get('name')} by {response.get('artists', [{}])[0].get('name')}")
-                return response
+            response = self._make_api_request(url, headers=headers, max_retries=1)
+            data = response.json()
+            if data and data.get("id"):
+                logger.info(f"Fetched Spotify track: {data.get('name')} by {data.get('artists', [{}])[0].get('name')}")
+                return data
         except Exception as e:
             logger.warning(f"Error fetching Spotify track {track_id}: {e}")
         
@@ -978,10 +982,11 @@ class MusicBrainzAPI:
         headers = {"Authorization": f"Bearer {access_token}"}
         
         try:
-            response = self._make_api_request(url, headers=headers, cache=False)
-            if response and response.get("id"):
-                logger.info(f"Fetched Spotify album: {response.get('name')} by {response.get('artists', [{}])[0].get('name')}")
-                return response
+            response = self._make_api_request(url, headers=headers, max_retries=1)
+            data = response.json()
+            if data and data.get("id"):
+                logger.info(f"Fetched Spotify album: {data.get('name')} by {data.get('artists', [{}])[0].get('name')}")
+                return data
         except Exception as e:
             logger.warning(f"Error fetching Spotify album {album_id}: {e}")
         
@@ -997,10 +1002,11 @@ class MusicBrainzAPI:
         headers = {"Authorization": f"Bearer {access_token}"}
         
         try:
-            response = self._make_api_request(url, headers=headers, cache=False)
-            if response and response.get("id"):
-                logger.info(f"Fetched Spotify artist: {response.get('name')}")
-                return response
+            response = self._make_api_request(url, headers=headers, max_retries=1)
+            data = response.json()
+            if data and data.get("id"):
+                logger.info(f"Fetched Spotify artist: {data.get('name')}")
+                return data
         except Exception as e:
             logger.warning(f"Error fetching Spotify artist {artist_id}: {e}")
         
