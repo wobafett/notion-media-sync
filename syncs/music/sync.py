@@ -2839,7 +2839,7 @@ class NotionMusicBrainzSync:
             logger.error(f"Error syncing album page {page.get('id')}: {e}")
             return False
     
-    def _format_album_properties(self, release_data: Dict, skip_spotify_url: bool = False) -> Dict:
+    def _format_album_properties(self, release_data: Dict, skip_spotify_url: bool = False, set_dns_on_labels: bool = False) -> Dict:
         """Format MusicBrainz release data for Notion properties."""
         properties = {}
         
@@ -2920,8 +2920,8 @@ class NotionMusicBrainzSync:
                     label_page_ids = []
                     for i, label_name in enumerate(label_names[:5]):  # Limit to 5 labels
                         label_mbid = label_mbids[i] if i < len(label_mbids) else None
-                        # Set DNS=True if this is part of Spotify URL flow (spotify_url is provided)
-                        label_page_id = self._find_or_create_label_page(label_name, label_mbid, set_dns=bool(spotify_url))
+                        # Set DNS=True if this is part of Spotify URL flow
+                        label_page_id = self._find_or_create_label_page(label_name, label_mbid, set_dns=set_dns_on_labels)
                         if label_page_id:
                             label_page_ids.append(label_page_id)
                     
@@ -3540,7 +3540,7 @@ class NotionMusicBrainzSync:
             album_props = {}
             cover_url = None
             if album_data:
-                album_props = self._format_album_properties(album_data)
+                album_props = self._format_album_properties(album_data, skip_spotify_url=False, set_dns_on_labels=set_dns)
                 logger.info(f"[ALBUM-CREATE] Formatted properties: count={len(album_props)}, keys={list(album_props.keys())}")
                 cover_url = self._get_album_cover_url(album_data)
                 logger.info(f"[ALBUM-CREATE] Cover URL: {bool(cover_url)}")
