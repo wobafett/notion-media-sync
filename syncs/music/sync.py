@@ -5189,6 +5189,27 @@ class NotionMusicBrainzSync:
                         'rich_text': [{'text': {'content': spotify_data['external_ids']['isrc']}}]
                     }
             
+            # Genres (fetch from artist since tracks don't have genres in Spotify)
+            if spotify_data.get('artists') and self.songs_properties.get('genres'):
+                artist_spotify_id = spotify_data['artists'][0].get('id')
+                if artist_spotify_id:
+                    # Fetch full artist data to get genres
+                    artist_data = self._get_spotify_artist_by_id(artist_spotify_id)
+                    if artist_data and artist_data.get('genres'):
+                        genres = artist_data['genres'][:5]  # Limit to top 5 genres
+                        if genres:
+                            from shared.utils import build_multi_select_options
+                            genre_options = build_multi_select_options(
+                                genres,
+                                limit=5,
+                                context="genres"
+                            )
+                            if genre_options:
+                                prop_key = self._get_property_key(self.songs_properties['genres'], 'songs')
+                                if prop_key:
+                                    properties[prop_key] = {'multi_select': genre_options}
+                                    logger.info(f"Added {len(genre_options)} genres from Spotify artist")
+            
             logger.info(f"Formatted {len(properties)} Spotify properties for song")
             return properties
             
