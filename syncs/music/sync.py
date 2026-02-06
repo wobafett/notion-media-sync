@@ -5089,6 +5089,7 @@ class NotionMusicBrainzSync:
             # Search for album by UPC if available
             album_external_ids = self.mb._extract_external_ids(album_data)
             upc = album_external_ids.get('upc') or album_external_ids.get('ean')
+            mb_release = None
             if upc:
                 logger.info(f"Searching MusicBrainz for album by barcode: {upc}")
                 mb_release = self.mb.search_release_by_barcode(upc)
