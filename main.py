@@ -142,6 +142,8 @@ def main(default_target: Optional[str] = None):
             run_options["force_scraping"] = True
         if getattr(args, "dry_run", False):
             run_options["dry_run"] = True
+        if getattr(args, "spotify_url", None):
+            run_options["spotify_url"] = args.spotify_url
 
         result = target.run_sync(**run_options)
     except (RuntimeError, ValueError) as exc:
