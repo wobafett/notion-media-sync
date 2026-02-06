@@ -1958,7 +1958,7 @@ class NotionGoogleBooksSync:
                                     logger.warning(f"Volume ID {volume_id} has title '{existing_title}' but requested title is '{book_title}'. Ignoring bad Volume ID and creating new page.")
         
         # Create new page with full metadata
-        properties = self._format_properties(book_data)
+        properties = self.format_notion_properties(book_data)
         
         # Add Google Books ID
         if google_books_id_prop_id:
