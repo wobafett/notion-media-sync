@@ -1960,6 +1960,15 @@ class NotionGoogleBooksSync:
         # Create new page with full metadata
         properties = self.format_notion_properties(book_data)
         
+        # Add title (format_notion_properties skips it for updates, but we need it for creation)
+        title_prop_id = self.property_mapping.get('title_property_id')
+        if title_prop_id and book_title:
+            title_key = self._get_property_key(title_prop_id)
+            if title_key:
+                properties[title_key] = {
+                    'title': [{'text': {'content': book_title}}]
+                }
+        
         # Add Google Books ID
         if google_books_id_prop_id:
             google_books_id_prop_key = self._get_property_key(google_books_id_prop_id)
