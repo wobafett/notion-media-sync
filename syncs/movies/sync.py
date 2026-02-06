@@ -1245,6 +1245,12 @@ class NotionTMDbSync:
                 return None  # Indicate skipped, not failed
             
             title, content_type = title_and_type
+            
+            # Skip TMDb sync for YouTube content
+            if content_type and content_type.lower() == 'youtube':
+                logger.info(f"Skipping TMDb sync for YouTube content: {title}")
+                return True  # Successfully processed, no sync needed
+            
             logger.info(f"Processing: {title} ({content_type})")
             
             # Extract current data for comparison (already pulled before inference)
