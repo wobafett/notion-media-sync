@@ -5130,15 +5130,38 @@ class NotionMusicBrainzSync:
             
             # #region agent log
             with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A,E","location":"sync.py:5095","message":"Song page sync completed","data":{"song_page_id":song_page_id,"sync_result":sync_result},"timestamp":int(time.time()*1000)})+'\n')
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A,D","location":"sync.py:5095","message":"Song page sync completed","data":{"song_page_id":song_page_id,"sync_result":sync_result,"has_spotify_data":bool(spotify_data)},"timestamp":int(time.time()*1000)})+'\n')
             # #endregion
             
             # If MusicBrainz sync failed, populate with Spotify data as fallback
+            # #region agent log
+            with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"sync.py:5103","message":"Checking fallback condition","data":{"not_sync_result":not sync_result,"has_spotify_data":bool(spotify_data),"condition_met":(not sync_result and spotify_data)},"timestamp":int(time.time()*1000)})+'\n')
+            # #endregion
+            
             if not sync_result and spotify_data:
                 logger.info(f"MusicBrainz sync failed, populating with Spotify data for '{track_name}'")
+                
+                # #region agent log
+                with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B,C","location":"sync.py:5110","message":"About to format Spotify properties","data":{"track_name":track_name,"spotify_data_keys":list(spotify_data.keys()) if spotify_data else None},"timestamp":int(time.time()*1000)})+'\n')
+                # #endregion
+                
                 spotify_props = self._format_spotify_song_properties(spotify_data, spotify_url)
+                
+                # #region agent log
+                with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"sync.py:5118","message":"Formatted Spotify properties","data":{"track_name":track_name,"prop_count":len(spotify_props),"has_props":bool(spotify_props),"prop_keys":list(spotify_props.keys()) if spotify_props else None},"timestamp":int(time.time()*1000)})+'\n')
+                # #endregion
+                
                 if spotify_props:
-                    self.notion.update_page(song_page_id, spotify_props)
+                    update_result = self.notion.update_page(song_page_id, spotify_props)
+                    
+                    # #region agent log
+                    with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+                        f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"sync.py:5127","message":"Notion update result","data":{"track_name":track_name,"update_result":update_result},"timestamp":int(time.time()*1000)})+'\n')
+                    # #endregion
+                    
                     logger.info(f"Updated song with Spotify data: {track_name}")
         
         return {
@@ -5153,10 +5176,22 @@ class NotionMusicBrainzSync:
         """Format Spotify track data for Notion properties (fallback when MusicBrainz unavailable)."""
         properties = {}
         
+        # #region agent log
+        import json, time
+        with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"sync.py:5175","message":"_format_spotify_song_properties entry","data":{"has_spotify_url":bool(spotify_url),"songs_properties_keys":list(self.songs_properties.keys())},"timestamp":int(time.time()*1000)})+'\n')
+        # #endregion
+        
         try:
             # Spotify URL (Listen property)
             if spotify_url and self.songs_properties.get('listen'):
                 prop_key = self._get_property_key(self.songs_properties['listen'], 'songs')
+                
+                # #region agent log
+                with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"sync.py:5188","message":"Listen property key lookup","data":{"listen_prop_id":self.songs_properties.get('listen'),"prop_key":prop_key},"timestamp":int(time.time()*1000)})+'\n')
+                # #endregion
+                
                 if prop_key:
                     properties[prop_key] = {'url': spotify_url}
             
@@ -5194,7 +5229,7 @@ class NotionMusicBrainzSync:
                 artist_spotify_id = spotify_data['artists'][0].get('id')
                 if artist_spotify_id:
                     # Fetch full artist data to get genres
-                    artist_data = self._get_spotify_artist_by_id(artist_spotify_id)
+                    artist_data = self.mb._get_spotify_artist_by_id(artist_spotify_id)
                     if artist_data and artist_data.get('genres'):
                         genres = artist_data['genres'][:10]  # Limit to top 10 genres
                         if genres:
