@@ -492,11 +492,29 @@ class NotionGoogleBooksSync:
             
             # Dynamically find DNS property if not configured
             if not self.property_mapping['dns_property_id']:
+                # #region agent log
+                import json
+                with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId":"debug-session","runId":"dns-discovery","hypothesisId":"A,B,D","location":"sync.py:DNS_discovery","message":"Searching for DNS property","data":{"total_properties":len(properties),"property_names":[p.get('name') for p in properties.values()]},"timestamp":int(__import__('time').time()*1000)})+'\n')
+                # #endregion
                 for prop_key, prop_data in properties.items():
+                    # #region agent log
+                    with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+                        f.write(json.dumps({"sessionId":"debug-session","runId":"dns-discovery","hypothesisId":"B,D","location":"sync.py:DNS_check_prop","message":"Checking property","data":{"prop_key":prop_key,"name":prop_data.get('name'),"type":prop_data.get('type'),"matches_name":prop_data.get('name')=='DNS',"is_checkbox":prop_data.get('type')=='checkbox'},"timestamp":int(__import__('time').time()*1000)})+'\n')
+                    # #endregion
                     if prop_data.get('name') == 'DNS' and prop_data.get('type') == 'checkbox':
                         self.property_mapping['dns_property_id'] = prop_data.get('id')
+                        # #region agent log
+                        with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+                            f.write(json.dumps({"sessionId":"debug-session","runId":"dns-discovery","hypothesisId":"A","location":"sync.py:DNS_found","message":"DNS property found!","data":{"prop_id":prop_data.get('id'),"prop_key":prop_key},"timestamp":int(__import__('time').time()*1000)})+'\n')
+                        # #endregion
                         logger.info(f"Found DNS checkbox property dynamically: {prop_data.get('id')}")
                         break
+                # #region agent log
+                if not self.property_mapping['dns_property_id']:
+                    with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+                        f.write(json.dumps({"sessionId":"debug-session","runId":"dns-discovery","hypothesisId":"A","location":"sync.py:DNS_not_found","message":"DNS property NOT found after search","data":{"searched_all_properties":True},"timestamp":int(__import__('time').time()*1000)})+'\n')
+                # #endregion
             
             # Log the property mapping
             for prop_key, prop_id in self.property_mapping.items():
@@ -1943,11 +1961,24 @@ class NotionGoogleBooksSync:
         
         # Set DNS checkbox to prevent automation cascade
         dns_prop_id = self.property_mapping.get('dns_property_id')
+        # #region agent log
+        import json
+        with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"dns-set","hypothesisId":"C","location":"sync.py:create_page_dns","message":"Attempting to set DNS checkbox","data":{"dns_prop_id":dns_prop_id,"has_dns_prop":bool(dns_prop_id)},"timestamp":int(__import__('time').time()*1000)})+'\n')
+        # #endregion
         if dns_prop_id:
             dns_key = self._get_property_key(dns_prop_id)
+            # #region agent log
+            with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({"sessionId":"debug-session","runId":"dns-set","hypothesisId":"C","location":"sync.py:dns_key_resolved","message":"DNS property key resolved","data":{"dns_key":dns_key,"has_dns_key":bool(dns_key)},"timestamp":int(__import__('time').time()*1000)})+'\n')
+            # #endregion
             if dns_key:
                 properties[dns_key] = {'checkbox': True}
                 logger.info("Setting DNS checkbox to prevent automation cascade")
+                # #region agent log
+                with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId":"debug-session","runId":"dns-set","hypothesisId":"C","location":"sync.py:dns_set_success","message":"DNS checkbox set in properties","data":{"dns_key":dns_key,"value":True},"timestamp":int(__import__('time').time()*1000)})+'\n')
+                # #endregion
         
         # Get cover image URL
         cover_url = self.google_books.get_cover_url(book_data)
