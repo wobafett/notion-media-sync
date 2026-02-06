@@ -3051,10 +3051,17 @@ class NotionMusicBrainzSync:
             return None
         
         try:
+            # #region agent log
+            logger.info(f"[DEBUG-A] _find_or_create_artist_page called: artist_name={artist_name}, artist_mbid={artist_mbid}")
+            # #endregion
+            
             normalized_mbid = self._normalize_mbid(artist_mbid)
             if normalized_mbid:
                 cached_page = self._artist_mbid_map.get(normalized_mbid)
                 if cached_page:
+                    # #region agent log
+                    logger.info(f"[DEBUG-D] Returned cached artist page: cached_page_id={cached_page}, normalized_mbid={normalized_mbid}")
+                    # #endregion
                     return cached_page
             
             title_prop_id = self.artists_properties.get('title')
@@ -3071,9 +3078,24 @@ class NotionMusicBrainzSync:
                 'title': {'equals': artist_name},
             }
             existing_pages = self.notion.query_database(self.artists_db_id, filter_params)
+            
+            # #region agent log
+            found_pages = [{'id':p['id'],'title':p['properties'].get(title_key,{}).get('title',[{}])[0].get('plain_text','')} for p in existing_pages] if existing_pages else []
+            logger.info(f"[DEBUG-A] Searched for existing artist by name: artist_name={artist_name}, found_count={len(existing_pages)}, found_pages={found_pages}")
+            # #endregion
+            
             if existing_pages:
                 page = existing_pages[0]
                 page_id = page['id']
+                
+                # #region agent log
+                mbid_prop_key = self._get_property_key(mbid_prop_id, 'artists')
+                existing_mbid = self._extract_rich_text_plain(page['properties'].get(mbid_prop_key)) if mbid_prop_key else None
+                page_title = page['properties'].get(title_key,{}).get('title',[{}])[0].get('plain_text','')
+                mbids_match = existing_mbid==artist_mbid if (existing_mbid and artist_mbid) else None
+                logger.info(f"[DEBUG-A] Found existing artist page: page_id={page_id}, page_title={page_title}, existing_mbid={existing_mbid}, requested_mbid={artist_mbid}, mbids_match={mbids_match}")
+                # #endregion
+                
                 if normalized_mbid:
                     self._persist_mbid_on_page(
                         'artists',
@@ -3092,6 +3114,11 @@ class NotionMusicBrainzSync:
             
             # Case-insensitive fallback
             all_pages = self._get_database_pages(self.artists_db_id)
+            
+            # #region agent log
+            logger.info(f"[DEBUG-E] Starting case-insensitive fallback search: artist_name={artist_name}, total_pages={len(all_pages)}")
+            # #endregion
+            
             for page in all_pages:
                 page_props = page.get('properties', {})
                 page_title_prop = page_props.get(title_key, {})
@@ -3099,6 +3126,14 @@ class NotionMusicBrainzSync:
                     page_title = page_title_prop['title'][0]['plain_text']
                     if page_title.lower() == artist_name.lower():
                         page_id = page['id']
+                        
+                        # #region agent log
+                        mbid_prop_key = self._get_property_key(mbid_prop_id, 'artists')
+                        existing_mbid = self._extract_rich_text_plain(page_props.get(mbid_prop_key)) if mbid_prop_key else None
+                        mbids_match = existing_mbid==artist_mbid if (existing_mbid and artist_mbid) else None
+                        logger.info(f"[DEBUG-E] Case-insensitive match found: page_id={page_id}, page_title={page_title}, existing_mbid={existing_mbid}, requested_mbid={artist_mbid}, mbids_match={mbids_match}")
+                        # #endregion
+                        
                         if normalized_mbid:
                             self._persist_mbid_on_page(
                                 'artists',
@@ -3326,6 +3361,10 @@ class NotionMusicBrainzSync:
             return None
         
         try:
+            # #region agent log
+            logger.info(f"[DEBUG-B] _find_or_create_album_page called: album_title={album_title}, album_mbid={album_mbid}")
+            # #endregion
+            
             normalized_mbid = self._normalize_mbid(album_mbid)
             if normalized_mbid:
                 cached_page = self._album_mbid_map.get(normalized_mbid)
@@ -3352,9 +3391,22 @@ class NotionMusicBrainzSync:
             
             existing_pages = self.notion.query_database(self.albums_db_id, filter_params)
             
+            # #region agent log
+            found_pages = [{'id':p['id'],'title':p['properties'].get(title_key,{}).get('title',[{}])[0].get('plain_text','')} for p in existing_pages] if existing_pages else []
+            logger.info(f"[DEBUG-B] Searched for existing album by title: album_title={album_title}, found_count={len(existing_pages)}, found_pages={found_pages}")
+            # #endregion
+            
             if existing_pages:
                 page = existing_pages[0]
                 album_page_id = page['id']
+                
+                # #region agent log
+                mbid_prop_key = self._get_property_key(mbid_prop_id, 'albums')
+                existing_mbid = self._extract_rich_text_plain(page['properties'].get(mbid_prop_key)) if mbid_prop_key else None
+                page_title = page['properties'].get(title_key,{}).get('title',[{}])[0].get('plain_text','')
+                mbids_match = existing_mbid==album_mbid if (existing_mbid and album_mbid) else None
+                logger.info(f"[DEBUG-B] Found existing album page: album_page_id={album_page_id}, page_title={page_title}, existing_mbid={existing_mbid}, requested_mbid={album_mbid}, mbids_match={mbids_match}")
+                # #endregion
                 if album_mbid:
                     album_data = self.mb.get_release(album_mbid)
                     if album_data:
@@ -4972,6 +5024,12 @@ class NotionMusicBrainzSync:
         """Create a track page from Spotify data."""
         track_name = spotify_data.get('name', '')
         
+        # #region agent log
+        artists_info = [{'name':a.get('name'),'id':a.get('id')} for a in spotify_data.get('artists',[])]
+        album_info = {'name':spotify_data.get('album',{}).get('name'),'id':spotify_data.get('album',{}).get('id')}
+        logger.info(f"[DEBUG-C] _create_track_from_spotify called: track_name={track_name}, spotify_url={spotify_url}, artists={artists_info}, album={album_info}")
+        # #endregion
+        
         # Extract external IDs
         external_ids = self.mb._extract_external_ids(spotify_data)
         isrc = external_ids.get('isrc')
@@ -5038,7 +5096,16 @@ class NotionMusicBrainzSync:
                     album_mbid = mb_release.get('id')
                     logger.info(f"Found MusicBrainz release: {album_mbid}")
             
+            # #region agent log
+            mb_release_name = mb_release.get('title') if mb_release else None
+            logger.info(f"[DEBUG-B] About to call _find_or_create_album_page: album_name={album_name}, album_mbid={album_mbid}, upc={upc}, mb_release_name={mb_release_name}")
+            # #endregion
+            
             album_page_id = self._find_or_create_album_page(album_name, album_mbid)
+            
+            # #region agent log
+            logger.info(f"[DEBUG-B] _find_or_create_album_page returned: album_page_id={album_page_id}")
+            # #endregion
         
         # Create/find artist
         artist_page_id = None
@@ -5054,7 +5121,16 @@ class NotionMusicBrainzSync:
                     artist_mbid = mb_artist.get('id')
                     logger.info(f"Found MusicBrainz artist: {artist_mbid}")
             
+            # #region agent log
+            mb_artist_name = mb_artist.get('name') if mb_artist else None
+            logger.info(f"[DEBUG-C] About to call _find_or_create_artist_page: artist_name={artist_name}, artist_spotify_id={artist_spotify_id}, artist_mbid={artist_mbid}, mb_artist_name={mb_artist_name}")
+            # #endregion
+            
             artist_page_id = self._find_or_create_artist_page(artist_name, artist_mbid)
+            
+            # #region agent log
+            logger.info(f"[DEBUG-C] _find_or_create_artist_page returned: artist_page_id={artist_page_id}")
+            # #endregion
         
         # Create the song page
         song_page_id = self._find_or_create_song_page(
