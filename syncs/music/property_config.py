@@ -63,6 +63,7 @@ ALBUMS_RATING_PROPERTY_ID = "%7BSBN"  # Rating (number)
 ALBUMS_COVER_IMAGE_PROPERTY_ID = None  # Cover image URL (url) - not in database
 ALBUMS_MUSICBRAINZ_URL_PROPERTY_ID = "UMvx"  # MusicBrainz URL (url)
 ALBUMS_LAST_UPDATED_PROPERTY_ID = None  # Last updated (date) - not in database
+ALBUMS_DISCS_PROPERTY_ID = None  # Discs (number) - total disc count for multi-disc albums
 
 # Relations
 ALBUMS_SONGS_PROPERTY_ID = "%7BCY%3F"  # Songs (relation)
@@ -89,6 +90,7 @@ SONGS_LISTEN_PROPERTY_ID = "ZSU_"  # Listen (url) - Spotify link
 SONGS_RATING_PROPERTY_ID = "HGkO"  # Rating (number)
 SONGS_MUSICBRAINZ_URL_PROPERTY_ID = "daMa"  # MusicBrainz URL (url)
 SONGS_LAST_UPDATED_PROPERTY_ID = None  # Last updated (date) - not in database
+SONGS_DISC_PROPERTY_ID = None  # Disc (number) - which disc this track is on (for multi-disc albums)
 
 # ============================================================================
 # LABELS DATABASE PROPERTIES

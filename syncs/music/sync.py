@@ -70,6 +70,7 @@ try:
         ALBUMS_COVER_IMAGE_PROPERTY_ID,
         ALBUMS_MUSICBRAINZ_URL_PROPERTY_ID,
         ALBUMS_LAST_UPDATED_PROPERTY_ID,
+        ALBUMS_DISCS_PROPERTY_ID,
         ALBUMS_SONGS_PROPERTY_ID,
         # Songs
         SONGS_TITLE_PROPERTY_ID,
@@ -87,6 +88,7 @@ try:
         SONGS_RATING_PROPERTY_ID,
         SONGS_MUSICBRAINZ_URL_PROPERTY_ID,
         SONGS_LAST_UPDATED_PROPERTY_ID,
+        SONGS_DISC_PROPERTY_ID,
         # Labels
         LABELS_TITLE_PROPERTY_ID,
         LABELS_MUSICBRAINZ_ID_PROPERTY_ID,
@@ -1239,6 +1241,7 @@ class NotionMusicBrainzSync:
                 'cover_image': ALBUMS_COVER_IMAGE_PROPERTY_ID,
                 'musicbrainz_url': ALBUMS_MUSICBRAINZ_URL_PROPERTY_ID,
                 'last_updated': ALBUMS_LAST_UPDATED_PROPERTY_ID,
+                'discs': ALBUMS_DISCS_PROPERTY_ID,
                 'songs': ALBUMS_SONGS_PROPERTY_ID,
                 'dns': properties.get('DNS', {}).get('id'),
             }
@@ -1281,6 +1284,7 @@ class NotionMusicBrainzSync:
                 'rating': SONGS_RATING_PROPERTY_ID,
                 'musicbrainz_url': SONGS_MUSICBRAINZ_URL_PROPERTY_ID,
                 'last_updated': SONGS_LAST_UPDATED_PROPERTY_ID,
+                'disc': SONGS_DISC_PROPERTY_ID,
                 'dns': properties.get('DNS', {}).get('id'),
             }
             
@@ -2963,6 +2967,14 @@ class NotionMusicBrainzSync:
                     if prop_key:
                         properties[prop_key] = {'number': total_tracks}
             
+            # Disc count (only if > 1)
+            if release_data.get('media') and self.albums_properties.get('discs'):
+                disc_count = len(release_data['media'])
+                if disc_count > 1:
+                    prop_key = self._get_property_key(self.albums_properties['discs'], 'albums')
+                    if prop_key:
+                        properties[prop_key] = {'number': disc_count}
+            
             # Genres/Tags combination for albums
             release_group = release_data.get('release-group') or {}
             if self.albums_properties.get('genres'):
@@ -4535,8 +4547,9 @@ class NotionMusicBrainzSync:
                                     'relation': [{'id': album_page_id}]
                                 }
                     
-                    # Extract track number from preferred track or release media
+                    # Extract track number and disc number from preferred track or release media
                     track_number = None
+                    disc_number = None
                     if preferred_track:
                         track_number = preferred_track.get('position')
                     
@@ -4546,6 +4559,7 @@ class NotionMusicBrainzSync:
                             for track in medium.get('tracks', []):
                                 if track.get('recording') and track['recording'].get('id') == recording_id:
                                     track_number = track.get('position')
+                                    disc_number = medium.get('position')  # Get disc position
                                     if track_number:
                                         break
                             if track_number:
@@ -4555,6 +4569,12 @@ class NotionMusicBrainzSync:
                         prop_key = self._get_property_key(self.songs_properties['track_number'], 'songs')
                         if prop_key:
                             properties[prop_key] = {'number': int(track_number)}
+                    
+                    # Set disc number (only if > 1 disc)
+                    if disc_number and len(best_release.get('media', [])) > 1 and self.songs_properties.get('disc'):
+                        prop_key = self._get_property_key(self.songs_properties['disc'], 'songs')
+                        if prop_key:
+                            properties[prop_key] = {'number': disc_number}
             
             # Length
             if recording_data.get('length') and self.songs_properties.get('length'):
@@ -5266,6 +5286,12 @@ class NotionMusicBrainzSync:
                     if spotify_data.get('disc_number', 1) > 1:
                         track_num = f"{spotify_data['disc_number']}-{track_num}"
                     properties[prop_key] = {'number': spotify_data['track_number']}
+            
+            # Store disc number if > 1
+            if spotify_data.get('disc_number', 1) > 1 and self.songs_properties.get('disc'):
+                disc_prop_key = self._get_property_key(self.songs_properties['disc'], 'songs')
+                if disc_prop_key:
+                    properties[disc_prop_key] = {'number': spotify_data['disc_number']}
             
             # ISRC (if available)
             if spotify_data.get('external_ids', {}).get('isrc') and self.songs_properties.get('isrc'):
