@@ -19,6 +19,7 @@ from shared.logging_config import get_logger, setup_logging
 from shared.notion_api import NotionAPI
 from shared.utils import (
     build_multi_select_options,
+    find_page_by_property,
     get_database_id,
     get_notion_token,
     normalize_id,
@@ -39,7 +40,7 @@ try:
         LAST_UPDATED_PROPERTY_ID, GOOGLE_BOOKS_ID_PROPERTY_ID, JIKAN_ID_PROPERTY_ID, 
         COMICVINE_ID_PROPERTY_ID, WOOKIEEPEDIA_ID_PROPERTY_ID, CHAPTERS_PROPERTY_ID, 
         VOLUMES_PROPERTY_ID, STATUS_PROPERTY_ID, TYPE_PROPERTY_ID, COMIC_FORMAT_PROPERTY_ID,
-        FOLLOWED_BY_PROPERTY_ID, FIELD_BEHAVIOR
+        FOLLOWED_BY_PROPERTY_ID, DNS_PROPERTY_ID, FIELD_BEHAVIOR
     )
 except ImportError as exc:
     raise RuntimeError(
@@ -486,7 +487,16 @@ class NotionGoogleBooksSync:
                 'series_property_id': SERIES_PROPERTY_ID,
                 'comic_format_property_id': COMIC_FORMAT_PROPERTY_ID,
                 'followed_by_property_id': FOLLOWED_BY_PROPERTY_ID,
+                'dns_property_id': DNS_PROPERTY_ID,
             }
+            
+            # Dynamically find DNS property if not configured
+            if not self.property_mapping['dns_property_id']:
+                for prop_key, prop_data in properties.items():
+                    if prop_data.get('name') == 'DNS' and prop_data.get('type') == 'checkbox':
+                        self.property_mapping['dns_property_id'] = prop_data.get('id')
+                        logger.info(f"Found DNS checkbox property dynamically: {prop_data.get('id')}")
+                        break
             
             # Log the property mapping
             for prop_key, prop_id in self.property_mapping.items():
@@ -1038,6 +1048,16 @@ class NotionGoogleBooksSync:
                 return None
             
             logger.info(f"Processing: {title}")
+            
+            # Check DNS checkbox - skip if checked (prevents automation cascade)
+            dns_prop_id = self.property_mapping.get('dns_property_id')
+            if dns_prop_id:
+                dns_key = self._get_property_key(dns_prop_id)
+                if dns_key:
+                    dns_prop = page.get('properties', {}).get(dns_key, {})
+                    if dns_prop.get('checkbox'):
+                        logger.info(f"Skipping '{title}' - DNS checkbox is checked")
+                        return None
             
             # Extract existing API IDs
             existing_ids = self.extract_existing_ids(page)
@@ -1794,8 +1814,179 @@ class NotionGoogleBooksSync:
         """Get the property key for a given property ID."""
         return self.property_id_to_key.get(property_id)
     
-    def run_sync(self, force_icons: bool = False, force_all: bool = False, max_workers: int = 3, force_research: bool = False, dry_run: bool = False) -> Dict:
+    def _parse_google_books_url(self, url: str) -> Optional[str]:
+        """
+        Parse Google Books URL and extract Volume ID.
+        
+        Supports formats:
+        - https://www.google.com/books/edition/TITLE/VOLUME_ID
+        - https://books.google.com/books?id=VOLUME_ID
+        - https://play.google.com/store/books/details?id=VOLUME_ID
+        
+        Returns: volume_id or None
+        """
+        if not url:
+            return None
+        
+        # Pattern for /edition/Title/VolumeID
+        edition_pattern = r'/books/edition/[^/]+/([a-zA-Z0-9_-]+)'
+        edition_match = re.search(edition_pattern, url)
+        if edition_match:
+            return edition_match.group(1)
+        
+        # Pattern for ?id=VolumeID or &id=VolumeID
+        id_pattern = r'[?&]id=([a-zA-Z0-9_-]+)'
+        id_match = re.search(id_pattern, url)
+        if id_match:
+            return id_match.group(1)
+        
+        logger.warning(f"Unable to parse Google Books URL: {url}")
+        return None
+    
+    def create_from_google_books_url(self, google_books_url: str) -> Dict:
+        """
+        Create a new Notion page from a Google Books URL.
+        
+        Args:
+            google_books_url: Google Books URL
+        
+        Returns:
+            Dict with keys: success, message, page_id, created
+        """
+        logger.info(f"Creating page from Google Books URL: {google_books_url}")
+        
+        # Parse URL to extract Volume ID
+        volume_id = self._parse_google_books_url(google_books_url)
+        if not volume_id:
+            return {
+                'success': False,
+                'message': f'Invalid Google Books URL format: {google_books_url}'
+            }
+        
+        logger.info(f"Extracted Volume ID: {volume_id}")
+        
+        # Fetch book data from Google Books API
+        book_data = self.google_books.get_book_details(volume_id)
+        if not book_data:
+            return {
+                'success': False,
+                'message': f'Could not fetch book data for Volume ID: {volume_id}'
+            }
+        
+        volume_info = book_data.get('volumeInfo', {})
+        book_title = volume_info.get('title', '')
+        
+        if not book_title:
+            return {
+                'success': False,
+                'message': f'No title found in Google Books data for Volume ID: {volume_id}'
+            }
+        
+        logger.info(f"Found book: {book_title}")
+        
+        # Check for duplicates by Google Books ID
+        google_books_id_prop_id = self.property_mapping.get('google_books_id_property_id')
+        if google_books_id_prop_id:
+            google_books_id_prop_key = self._get_property_key(google_books_id_prop_id)
+            if google_books_id_prop_key:
+                existing_page_id = find_page_by_property(
+                    self.notion,
+                    self.database_id,
+                    google_books_id_prop_key,
+                    'rich_text',
+                    volume_id
+                )
+                
+                if existing_page_id:
+                    # Validate that the existing page's title matches
+                    page = self.notion.get_page(existing_page_id)
+                    if page:
+                        title_prop_id = self.property_mapping.get('title_property_id')
+                        title_key = self._get_property_key(title_prop_id)
+                        if title_key:
+                            existing_page_title_prop = page.get('properties', {}).get(title_key, {})
+                            if existing_page_title_prop.get('title') and existing_page_title_prop['title']:
+                                existing_title = existing_page_title_prop['title'][0]['plain_text']
+                                # Check if titles match (case-insensitive)
+                                if existing_title.lower() == book_title.lower():
+                                    logger.info(f"Book already exists in Notion: {existing_page_id}")
+                                    # Update the existing page
+                                    self.sync_page(page, force_all=True)
+                                    
+                                    # Explicitly set Google Books URL
+                                    url_prop_id = self.property_mapping.get('google_books_url_property_id')
+                                    if url_prop_id:
+                                        url_key = self._get_property_key(url_prop_id)
+                                        if url_key:
+                                            self.notion.update_page(existing_page_id, {url_key: {'url': google_books_url}})
+                                    
+                                    return {
+                                        'success': True,
+                                        'message': f'Updated existing book: {book_title}',
+                                        'page_id': existing_page_id,
+                                        'created': False
+                                    }
+                                else:
+                                    # Titles don't match - bad data
+                                    logger.warning(f"Volume ID {volume_id} has title '{existing_title}' but requested title is '{book_title}'. Ignoring bad Volume ID and creating new page.")
+        
+        # Create new page with full metadata
+        properties = self._format_properties(book_data)
+        
+        # Add Google Books ID
+        if google_books_id_prop_id:
+            google_books_id_prop_key = self._get_property_key(google_books_id_prop_id)
+            if google_books_id_prop_key:
+                properties[google_books_id_prop_key] = {
+                    'rich_text': [{'text': {'content': volume_id}}]
+                }
+        
+        # Set DNS checkbox to prevent automation cascade
+        dns_prop_id = self.property_mapping.get('dns_property_id')
+        if dns_prop_id:
+            dns_key = self._get_property_key(dns_prop_id)
+            if dns_key:
+                properties[dns_key] = {'checkbox': True}
+                logger.info("Setting DNS checkbox to prevent automation cascade")
+        
+        # Get cover image URL
+        cover_url = self.google_books.get_cover_url(book_data)
+        
+        # Set icon (book emoji)
+        icon = '📚'
+        
+        # Create the page
+        page_id = self.notion.create_page(self.database_id, properties, cover_url, icon)
+        
+        if not page_id:
+            return {
+                'success': False,
+                'message': f'Failed to create Notion page for: {book_title}'
+            }
+        
+        logger.info(f"Successfully created page: {page_id}")
+        
+        # Explicitly set Google Books URL (separate update call)
+        url_prop_id = self.property_mapping.get('google_books_url_property_id')
+        if url_prop_id:
+            url_key = self._get_property_key(url_prop_id)
+            if url_key:
+                self.notion.update_page(page_id, {url_key: {'url': google_books_url}})
+                logger.info(f"Set Google Books URL: {google_books_url}")
+        
+        return {
+            'success': True,
+            'message': f'Created book page: {book_title}',
+            'page_id': page_id,
+            'created': True
+        }
+    
+    def run_sync(self, force_icons: bool = False, force_all: bool = False, max_workers: int = 3, force_research: bool = False, dry_run: bool = False, google_books_url: Optional[str] = None) -> Dict:
         """Run the complete synchronization process."""
+        # Google Books URL creation mode takes precedence
+        if google_books_url:
+            return self.create_from_google_books_url(google_books_url)
+        
         logger.info("Starting Notion-Google Books synchronization")
         logger.info(f"Using {max_workers} parallel workers for processing")
         
@@ -1996,8 +2187,14 @@ def run_sync(
     force_research: bool = False,
     force_scraping: bool = False,
     dry_run: bool = False,
+    google_books_url: Optional[str] = None,
 ) -> Dict:
     """Run the Books sync with the provided options."""
+    # Google Books URL creation mode takes precedence
+    if google_books_url and not page_id:
+        sync = _build_sync_instance(force_scraping=force_scraping)
+        return sync.create_from_google_books_url(google_books_url)
+    
     enforce_worker_limits(workers)
 
     if page_id and last_page:

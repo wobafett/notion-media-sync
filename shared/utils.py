@@ -68,3 +68,50 @@ def get_database_id(*env_names: str) -> Optional[str]:
     return None
 
 
+def find_page_by_property(
+    notion_api,
+    database_id: str,
+    property_key: str,
+    property_type: str,
+    value: str,
+) -> Optional[str]:
+    """
+    Find existing Notion page by property value.
+    
+    Args:
+        notion_api: NotionAPI instance
+        database_id: Database to search
+        property_key: Property key to filter on
+        property_type: Notion property type ('rich_text', 'url', 'number')
+        value: Value to match
+    
+    Returns:
+        Page ID if found, None otherwise
+    
+    Example:
+        page_id = find_page_by_property(
+            notion,
+            database_id,
+            'google_books_id',
+            'rich_text',
+            'ABC123'
+        )
+    """
+    if not database_id or not value or not property_key:
+        return None
+    
+    try:
+        filter_params = {
+            'property': property_key,
+            property_type: {'equals': value}
+        }
+        existing_pages = notion_api.query_database(database_id, filter_params)
+        if existing_pages:
+            logger.debug(f"Found existing page by {property_type} property: {existing_pages[0]['id']}")
+            return existing_pages[0]['id']
+    except Exception as e:
+        logger.debug(f"Error searching for page by {property_type}: {e}")
+    
+    return None
+
+

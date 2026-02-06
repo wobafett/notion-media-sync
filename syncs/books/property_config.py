@@ -10,6 +10,7 @@ GOOGLE_BOOKS_ID_PROPERTY_ID = "M%60Tt"  # Google Books ID (rich_text property)
 JIKAN_ID_PROPERTY_ID = "hqg%5E"  # Jikan ID (rich_text property)
 COMICVINE_ID_PROPERTY_ID = "L%7CON"  # ComicVine ID (rich_text property)
 WOOKIEEPEDIA_ID_PROPERTY_ID = "lPt~"  # Wookieepedia ID (rich_text property)
+DNS_PROPERTY_ID = None  # DNS (Doesn't Need Sync) checkbox - will be loaded dynamically
 
 # Basic book information
 AUTHORS_PROPERTY_ID = "hN~X"  # Author (multi_select property)

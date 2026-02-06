@@ -82,6 +82,11 @@ def build_parser(targets) -> argparse.ArgumentParser:
         type=str,
         help="Music target: Spotify URL for identification (track, album, or artist)",
     )
+    parser.add_argument(
+        "--google-books-url",
+        type=str,
+        help="Books target: Google Books URL to create new page",
+    )
     return parser
 
 
@@ -144,6 +149,8 @@ def main(default_target: Optional[str] = None):
             run_options["dry_run"] = True
         if getattr(args, "spotify_url", None):
             run_options["spotify_url"] = args.spotify_url
+        if getattr(args, "google_books_url", None):
+            run_options["google_books_url"] = args.google_books_url
 
         result = target.run_sync(**run_options)
     except (RuntimeError, ValueError) as exc:
