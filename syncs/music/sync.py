@@ -5193,6 +5193,18 @@ class NotionMusicBrainzSync:
             
             # Pass artist name for better album matching, and set_dns=True for Spotify URL flow
             album_page_id = self._find_or_create_album_page(album_name, album_mbid, artist_name=artists_data[0].get('name') if artists_data else None, set_dns=True)
+            
+            # Set Spotify URL on the album page
+            if album_page_id:
+                album_spotify_url = f"https://open.spotify.com/album/{album_spotify_id}"
+                spotify_prop_id = self.albums_properties.get('listen')
+                if spotify_prop_id:
+                    spotify_key = self._get_property_key(spotify_prop_id, 'albums')
+                    if spotify_key:
+                        logger.info(f"[DEBUG] Adding Spotify URL to album page")
+                        self.notion.update_page(album_page_id, {
+                            spotify_key: {'url': album_spotify_url}
+                        })
         
         # Create/find artist
         artist_page_id = None
