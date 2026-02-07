@@ -146,7 +146,7 @@ This guide shows you how to automatically trigger GitHub Actions when pages are 
     - Select **"Make an HTTP Request"**
     - Configure:
       - **Method**: `POST`
-      - **URL**: `https://api.github.com/repos/wobafett/Notion-IGDB-Sync/actions/workflows/sync.yml/dispatches`
+      - **URL**: `https://api.github.com/repos/wobafett/notion-media-sync/actions/workflows/notion-sync.yml/dispatches`
       - **Headers** (add each header separately):
         - `Authorization`: `Bearer YOUR_GITHUB_TOKEN`
           - Replace `YOUR_GITHUB_TOKEN` with your actual GitHub Personal Access Token
@@ -192,7 +192,7 @@ This guide shows you how to automatically trigger GitHub Actions when pages are 
      - Look for any errors (red indicators)
 
 4. **Check GitHub Actions**
-   - Go to: https://github.com/wobafett/Notion-IGDB-Sync/actions
+   - Go to: https://github.com/wobafett/notion-media-sync/actions
    - You should see a new workflow run triggered by `repository_dispatch`
    - It should appear within 10-30 seconds of the Notion update
 
@@ -208,15 +208,15 @@ This guide shows you how to automatically trigger GitHub Actions when pages are 
 - Click on the execution to see error details
 - Check the HTTP module - verify the GitHub token is correct
 - Check the request body - verify the JSON is formatted correctly
-- Verify the repository name: `wobafett/Notion-IGDB-Sync`
-- Verify the workflow file name: `sync.yml`
+- Verify the repository name: `wobafett/notion-media-sync`
+- Verify the workflow file name: `notion-sync.yml`
 
 **If GitHub Actions doesn't trigger:**
 - Check Make.com execution logs - did the HTTP request succeed?
 - Verify the GitHub token has `repo` scope
-- Check the repository name: `wobafett/Notion-IGDB-Sync`
+- Check the repository name: `wobafett/notion-media-sync`
 - Look at the HTTP response in Make.com - should be status 204 (No Content) for success
-- Verify the workflow file name matches: `sync.yml`
+- Verify the workflow file name matches: `notion-sync.yml`
 
 **If GitHub Actions triggers but fails:**
 - Check GitHub Actions logs for error messages

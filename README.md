@@ -1,16 +1,16 @@
-# Notion IGDb Sync
+# Notion Media Sync
 
-A Python script that synchronizes video game data from the Internet Game Database (IGDb) to your Notion database. Perfect for maintaining an up-to-date gaming collection with rich metadata, platform information, and developer details.
+A unified Python application that synchronizes media data from multiple sources (IGDb, MusicBrainz, TMDb, Google Books) to your Notion databases. Perfect for maintaining up-to-date collections of games, music, movies/TV shows, and books with rich metadata.
 
 ## ✨ Features
 
-- **Automatic Data Sync**: Keeps your Notion database updated with latest IGDb information
-- **Rich Metadata**: Includes genres, platforms, developers, publishers, ratings, and more
-- **Cover Images**: Automatically updates page covers with game artwork
-- **Platform Support**: Tracks which platforms each game is available on
-- **Developer/Publisher Info**: Shows who made and published each game
+- **Multi-Media Support**: Games (IGDb), Music (MusicBrainz/Spotify), Movies/TV (TMDb), Books (Google Books)
+- **Automatic Data Sync**: Keeps your Notion databases updated with latest information
+- **Rich Metadata**: Includes genres, ratings, release dates, cast/artists, and more
+- **Cover Images**: Automatically updates page covers with artwork
+- **URL Creation**: Create new pages directly from Spotify or Google Books URLs
 - **Efficient Updates**: Only updates changed data to minimize API calls
-- **Cloud Ready**: Easy deployment to cloud platforms
+- **Cloud Ready**: Easy deployment to GitHub Actions
 
 ## 🚀 Quick Start
 
@@ -340,5 +340,4 @@ If you encounter issues:
 
 ---
 
-**Happy gaming! 🎮**
-# Notion-IGDB-Sync
+**Happy syncing! 🎮🎵🎬📚**

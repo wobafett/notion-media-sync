@@ -15,7 +15,7 @@
 
 3. **Configure the Action:**
    ```
-   URL: https://api.github.com/repos/wobafett/Notion-IGDB-Sync/actions/workflows/sync_last_page.yml/dispatches
+   URL: https://api.github.com/repos/wobafett/notion-media-sync/actions/workflows/notion-sync.yml/dispatches
    Method: POST
    Headers:
      - Accept: application/vnd.github+json
@@ -54,6 +54,7 @@
    - Tap share button in Shortcuts
    - "Add to Home Screen"
    - This opens GitHub Actions page for manual trigger
+   - URL: `https://github.com/wobafett/notion-media-sync/actions/workflows/notion-sync.yml`
 
 ## 🔧 **Detailed Setup (Method 1)**
 
@@ -73,7 +74,7 @@
 2. Tap "+" → "Add Action"
 3. Search for "Get Contents of URL"
 4. Configure:
-   - **URL:** `https://api.github.com/repos/wobafett/Notion-IGDB-Sync/actions/workflows/sync_last_page.yml/dispatches`
+   - **URL:** `https://api.github.com/repos/wobafett/notion-media-sync/actions/workflows/notion-sync.yml/dispatches`
    - **Method:** POST
    - **Headers:** 
      - `Accept`: `application/vnd.github+json`
@@ -134,12 +135,12 @@
 
 1. **Test in Safari:**
    ```
-   https://api.github.com/repos/wobafett/Notion-IGDB-Sync/actions/workflows/sync_last_page.yml/dispatches
+   https://api.github.com/repos/wobafett/notion-media-sync/actions/workflows/notion-sync.yml/dispatches
    ```
 
 2. **Check GitHub Actions:**
    - Go to Actions tab
-   - Look for "Sync Last Page" workflow runs
+   - Look for "Notion Media Sync" workflow runs
    - Verify it triggers successfully
 
 ## 🚀 **Advanced Features**
