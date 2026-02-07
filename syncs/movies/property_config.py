@@ -48,14 +48,14 @@ COLLECTION_PROPERTY_ID = "TW%5DE"  # Collection (multi-select)
 #   'skip'    - Never update this field
 FIELD_BEHAVIOR = {
     # Fields that merge TMDb data with existing data
-    'cast_property_id': 'merge',                    # Merge cast data
+#    'cast_property_id': 'merge',                    # Merge cast data
     'genres_property_id': 'merge',                  # Merge genre data
-    'production_companies_property_id': 'merge',    # Merge company data
+ #   'production_companies_property_id': 'merge',    # Merge company data
     'collection_property_id': 'merge',              # Merge collection data
     
     # Fields that only update if TMDb has data
-    'director_property_id': 'preserve',             # Only update if TMDb has directors
-    'creator_property_id': 'preserve',             # Only update if TMDb has creators
+ #   'director_property_id': 'preserve',             # Only update if TMDb has directors
+ #   'creator_property_id': 'preserve',             # Only update if TMDb has creators
     
     # Fields that always overwrite (default behavior)
     # 'watch_providers_property_id': 'default',     # Always overwrite watch providers
