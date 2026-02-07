@@ -491,7 +491,7 @@ class MusicBrainzAPI:
             
             url = f"{self.base_url}/isrc/{isrc}"
             params = {
-                'inc': 'artists+releases+release-groups+artist-credits+aliases',
+                'inc': 'artists+releases+release-groups+artist-credits+aliases+genres+tags',
                 'fmt': 'json'
             }
             
@@ -1037,6 +1037,40 @@ class MusicBrainzAPI:
             external_ids["ean"] = ext.get("ean")
         
         return external_ids
+    
+    def _extract_spotify_genres(self, spotify_data: Dict, entity_type: str) -> List[str]:
+        """
+        Extract genres from Spotify album or artist data.
+        
+        Args:
+            spotify_data: Spotify API response for album or artist
+            entity_type: 'album', 'artist', or 'track'
+        
+        Returns:
+            List of genre strings
+        """
+        genres = []
+        
+        if entity_type == 'album' and spotify_data.get('genres'):
+            genres.extend(spotify_data['genres'])
+        elif entity_type == 'artist' and spotify_data.get('genres'):
+            genres.extend(spotify_data['genres'])
+        elif entity_type == 'track':
+            # Tracks don't have genres directly; get from album and artist
+            album_data = spotify_data.get('album', {})
+            if album_data.get('id'):
+                full_album = self._get_spotify_album_by_id(album_data['id'])
+                if full_album and full_album.get('genres'):
+                    genres.extend(full_album['genres'])
+            
+            # Also get from first artist
+            artists = spotify_data.get('artists', [])
+            if artists and artists[0].get('id'):
+                artist_data = self._get_spotify_artist_by_id(artists[0]['id'])
+                if artist_data and artist_data.get('genres'):
+                    genres.extend(artist_data['genres'])
+        
+        return genres
     
     def search_labels(self, name: str, limit: int = 5) -> List[Dict]:
         """Search for labels by name."""
@@ -3005,6 +3039,47 @@ class NotionMusicBrainzSync:
                             for tag in release_data['tags']
                             if isinstance(tag, dict) and tag.get('name')
                         )
+                    
+                    # Add Spotify album genres if available
+                    if release_data.get('relations'):
+                        for relation in release_data.get('relations', []):
+                            if relation.get('type', '').lower() in ['streaming', 'free streaming']:
+                                url_resource = relation.get('url', {})
+                                if isinstance(url_resource, dict):
+                                    url_str = url_resource.get('resource', '')
+                                else:
+                                    url_str = str(url_resource)
+                                
+                                if url_str and 'spotify.com/album/' in url_str:
+                                    spotify_id = url_str.split('/')[-1].split('?')[0]
+                                    spotify_album = self.mb._get_spotify_album_by_id(spotify_id)
+                                    if spotify_album and spotify_album.get('genres'):
+                                        genre_candidates.extend(spotify_album['genres'])
+                                        logger.debug(f"Added {len(spotify_album['genres'])} genres from Spotify album")
+                                    break
+                    
+                    # Add Spotify artist genres
+                    if release_data.get('artist-credit') and release_data['artist-credit']:
+                        artist = release_data['artist-credit'][0].get('artist', {})
+                        artist_mbid = artist.get('id')
+                        if artist_mbid:
+                            artist_data = self.mb.get_artist(artist_mbid)
+                            if artist_data and artist_data.get('relations'):
+                                for relation in artist_data.get('relations', []):
+                                    url_resource = relation.get('url', {})
+                                    if isinstance(url_resource, dict):
+                                        url_str = url_resource.get('resource', '')
+                                    else:
+                                        url_str = str(url_resource)
+                                    
+                                    if url_str and 'spotify' in url_str.lower() and '/artist/' in url_str:
+                                        spotify_id = url_str.split('/')[-1].split('?')[0]
+                                        spotify_artist = self.mb._get_spotify_artist_by_id(spotify_id)
+                                        if spotify_artist and spotify_artist.get('genres'):
+                                            genre_candidates.extend(spotify_artist['genres'])
+                                            logger.debug(f"Added {len(spotify_artist['genres'])} genres from Spotify artist")
+                                        break
+                    
                     genre_options = build_multi_select_options(
                         genre_candidates,
                         limit=10,
@@ -4366,7 +4441,8 @@ class NotionMusicBrainzSync:
         recording_data: Dict,
         preferred_release: Optional[Dict] = None,
         preferred_track: Optional[Dict] = None,
-        skip_spotify_url: bool = False
+        skip_spotify_url: bool = False,
+        spotify_context: Optional[Dict] = None
     ) -> Dict:
         """Format MusicBrainz recording data for Notion properties.
         
@@ -4375,6 +4451,7 @@ class NotionMusicBrainzSync:
             preferred_release: Release data selected via release-group search (if any).
             preferred_track: Track entry from the preferred release (if any).
             skip_spotify_url: If True, skip writing Spotify URL (because it was user-provided).
+            spotify_context: Optional dict with 'album' and 'artist' Spotify data to avoid redundant API calls.
         """
         properties = {}
         
@@ -4633,6 +4710,60 @@ class NotionMusicBrainzSync:
                             for tag in recording_data['tags']
                             if isinstance(tag, dict) and tag.get('name')
                         )
+                    
+                    # Add Spotify genres from album if available
+                    # Use spotify_context if provided (from Spotify URL creation), otherwise look up via MusicBrainz relations
+                    if spotify_context and spotify_context.get('album'):
+                        spotify_album = spotify_context['album']
+                        if spotify_album.get('genres'):
+                            genre_candidates.extend(spotify_album['genres'])
+                            logger.debug(f"Added {len(spotify_album['genres'])} genres from Spotify album (via context)")
+                    elif best_release and best_release.get('relations'):
+                        for relation in best_release.get('relations', []):
+                            if relation.get('type', '').lower() in ['streaming', 'free streaming']:
+                                url_resource = relation.get('url', {})
+                                if isinstance(url_resource, dict):
+                                    url_str = url_resource.get('resource', '')
+                                else:
+                                    url_str = str(url_resource)
+                                
+                                if url_str and 'spotify.com/album/' in url_str:
+                                    spotify_id = url_str.split('/')[-1].split('?')[0]
+                                    spotify_album = self.mb._get_spotify_album_by_id(spotify_id)
+                                    if spotify_album and spotify_album.get('genres'):
+                                        genre_candidates.extend(spotify_album['genres'])
+                                        logger.debug(f"Added {len(spotify_album['genres'])} genres from Spotify album")
+                                    break
+                    
+                    # Add Spotify artist genres if we have artist data
+                    # Use spotify_context if provided (from Spotify URL creation), otherwise look up via MusicBrainz relations
+                    if spotify_context and spotify_context.get('artist'):
+                        spotify_artist = spotify_context['artist']
+                        if spotify_artist.get('genres'):
+                            genre_candidates.extend(spotify_artist['genres'])
+                            logger.debug(f"Added {len(spotify_artist['genres'])} genres from Spotify artist (via context)")
+                    elif recording_data.get('artist-credit') and recording_data['artist-credit']:
+                        artist = recording_data['artist-credit'][0].get('artist', {})
+                        artist_mbid = artist.get('id')
+                        if artist_mbid:
+                            # Check if artist has Spotify relationship
+                            artist_data = self.mb.get_artist(artist_mbid)
+                            if artist_data and artist_data.get('relations'):
+                                for relation in artist_data.get('relations', []):
+                                    url_resource = relation.get('url', {})
+                                    if isinstance(url_resource, dict):
+                                        url_str = url_resource.get('resource', '')
+                                    else:
+                                        url_str = str(url_resource)
+                                    
+                                    if url_str and 'spotify' in url_str.lower() and '/artist/' in url_str:
+                                        spotify_id = url_str.split('/')[-1].split('?')[0]
+                                        spotify_artist = self.mb._get_spotify_artist_by_id(spotify_id)
+                                        if spotify_artist and spotify_artist.get('genres'):
+                                            genre_candidates.extend(spotify_artist['genres'])
+                                            logger.debug(f"Added {len(spotify_artist['genres'])} genres from Spotify artist")
+                                        break
+                    
                     genre_options = build_multi_select_options(
                         genre_candidates,
                         limit=10,
