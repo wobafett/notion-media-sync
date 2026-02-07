@@ -81,6 +81,9 @@
      - `Authorization`: `Bearer YOUR_TOKEN_HERE`
      - `X-GitHub-Api-Version`: `2022-11-28`
    - **Request Body:** `{"ref":"main"}`
+   - **Note for single-page syncs**: You can pass `page_id` in the inputs. The system accepts both page IDs and full Notion page URLs:
+     - `{"ref":"main","inputs":{"page_id":"123abc456def..."}}` (plain ID)
+     - `{"ref":"main","inputs":{"page_id":"https://www.notion.so/My-Page-123abc..."}}` (full URL)
 
 ### **Step 3: Add Success Feedback**
 1. Add "Show Result" action

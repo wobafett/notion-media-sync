@@ -161,6 +161,7 @@ This guide shows you how to automatically trigger GitHub Actions when pages are 
       - **Important**: 
        - Use a single-line JSON (no line breaks)
        - `page_id`: `{{1.data.id}}` (the Notion page that triggered the webhook)
+       - **Note**: You can also pass a full Notion page URL instead of just the page ID - the system automatically extracts the ID from URLs
        - Make sure there are no extra spaces or formatting
       - **Alternative (if using variables)**: If Make.com supports JSON body builder:
         - `event_type`: `sync`

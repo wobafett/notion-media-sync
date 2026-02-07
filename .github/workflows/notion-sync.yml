@@ -13,7 +13,7 @@ on:
           - movies
           - books
       page_id:
-        description: "Notion page ID to update a single page (takes precedence over other inputs)"
+        description: "Notion page ID or URL to update a single page (takes precedence over other inputs)"
         required: false
         type: string
       database:

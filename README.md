@@ -129,6 +129,37 @@ python3 webhook.py --page-id <page_id> --spotify-url "https://open.spotify.com/t
 - If ISRC/UPC not found → falls back to name-based search
 - Works seamlessly with existing sync logic
 
+### Page ID or URL Input (All Syncs)
+
+You can provide either a page ID or a full Notion page URL wherever page IDs are accepted. The system automatically extracts the page ID from URLs.
+
+**Supported Formats:**
+```bash
+# Plain page ID (32-character hex string)
+python3 webhook.py --page-id "123abc456def789012345678901234ab"
+
+# Page ID with dashes (UUID format)
+python3 webhook.py --page-id "123abc45-6def-7890-abcd-ef1234567890"
+
+# Full Notion web URL
+python3 webhook.py --page-id "https://www.notion.so/My-Page-Title-123abc456def789012345678901234ab"
+
+# Notion share URL with query params
+python3 webhook.py --page-id "https://notion.so/123abc456def789012345678901234ab?pvs=4"
+```
+
+**Benefits:**
+- **Copy/paste from browser**: No need to manually extract IDs
+- **iOS shortcuts**: Easier integration with share sheets
+- **Make.com webhooks**: Use full URL from Notion webhook payloads
+- **Backward compatible**: Existing page IDs continue to work
+
+This works everywhere page IDs are accepted:
+- `webhook.py` command-line arguments
+- GitHub Actions workflow inputs
+- Make.com webhook calls
+- iOS shortcuts
+
 ## 📋 Setup Guide
 
 ### 1. Environment Variables

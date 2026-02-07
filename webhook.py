@@ -10,14 +10,14 @@ from dotenv import load_dotenv
 import router
 from shared.logging_config import get_logger, setup_logging
 from shared.notion_api import NotionAPI
-from shared.utils import get_notion_token
+from shared.utils import get_notion_token, extract_page_id_from_url
 
 logger = get_logger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Route a single Notion page to the correct sync target")
-    parser.add_argument("--page-id", required=False, help="Notion page ID to sync (optional if --spotify-url or --google-books-url is provided)")
+    parser.add_argument("--page-id", required=False, help="Notion page ID or URL to sync (optional if --spotify-url or --google-books-url is provided)")
     parser.add_argument("--force-icons", action="store_true", help="Force update page icons if supported")
     parser.add_argument("--force-all", action="store_true", help="Process page even if marked complete")
     parser.add_argument("--force-update", action="store_true", help="Movies/books targets: force update completed entries")
@@ -104,9 +104,16 @@ def main():
 
     # Standard page-specific mode
     notion = NotionAPI(notion_token)
-    page = notion.get_page(args.page_id)
+    
+    # Extract page ID from URL if needed
+    page_id = extract_page_id_from_url(args.page_id)
+    if not page_id:
+        logger.error("Invalid page ID or URL: %s", args.page_id)
+        sys.exit(1)
+    
+    page = notion.get_page(page_id)
     if not page:
-        logger.error("Unable to retrieve Notion page %s", args.page_id)
+        logger.error("Unable to retrieve Notion page %s", page_id)
         sys.exit(1)
 
     target = router.find_target_for_page(page)
@@ -115,13 +122,13 @@ def main():
         logger.error("No registered sync target for database %s", parent_db)
         sys.exit(1)
 
-    logger.info("Routing page %s to %s target", args.page_id, target.name)
+    logger.info("Routing page %s to %s target", page_id, target.name)
 
     if not target.validate_environment():
         sys.exit(1)
 
     options = {
-        "page_id": args.page_id,
+        "page_id": page_id,
         "force_icons": args.force_icons,
         "force_all": args.force_all,
         "force_update": args.force_update,
