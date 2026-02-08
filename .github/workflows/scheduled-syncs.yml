@@ -1,0 +1,107 @@
+name: Scheduled Targeted Syncs
+
+on:
+  schedule:
+    - cron: "0 4 * * 5"    # Weekly on Friday at 4 AM UTC
+    - cron: "0 4 1 * *"    # Monthly on 1st at 4 AM UTC
+  workflow_dispatch:
+    inputs:
+      sync_profile:
+        description: "Which sync to run (leave empty to run all scheduled for today)"
+        required: false
+        type: choice
+        options:
+          - ""
+          - returning_tv
+          - released_ended
+
+jobs:
+  targeted-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    
+    strategy:
+      matrix:
+        include:
+          # Weekly Friday: Update returning TV shows
+          - name: "Returning TV Shows"
+            profile_id: "returning_tv"
+            target: movies
+            status_filter: "Returning Series"
+            update_only: "rating,seasons,total_episodes,latest_episode,next_episode"
+            schedule: "weekly"
+          
+          # Monthly 1st: Update released/ended content
+          - name: "Released Movies and Ended TV"
+            profile_id: "released_ended"
+            target: movies
+            status_filter: "Released,Ended"
+            update_only: "rating,watch_providers"
+            schedule: "monthly"
+    
+    env:
+      NOTION_INTERNAL_INTEGRATION_SECRET: ${{ secrets.NOTION_INTERNAL_INTEGRATION_SECRET }}
+      NOTION_MOVIETV_DATABASE_ID: ${{ secrets.NOTION_MOVIETV_DATABASE_ID }}
+      TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+      LOG_LEVEL: INFO
+      PYTHONUNBUFFERED: "1"
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      
+      - name: Install dependencies
+        run: pip install --upgrade pip && pip install -r requirements.txt
+      
+      - name: Determine if this job should run
+        id: should_run
+        run: |
+          # Manual trigger with specific profile
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.sync_profile }}" ]; then
+            if [ "${{ inputs.sync_profile }}" = "${{ matrix.profile_id }}" ]; then
+              echo "run=true" >> $GITHUB_OUTPUT
+              echo "Running manually selected profile: ${{ matrix.name }}"
+            else
+              echo "run=false" >> $GITHUB_OUTPUT
+              echo "Skipping ${{ matrix.name }} (different profile selected)"
+            fi
+            exit 0
+          fi
+          
+          # Manual trigger without profile selection (run all)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run=true" >> $GITHUB_OUTPUT
+            echo "Running manually triggered sync: ${{ matrix.name }}"
+            exit 0
+          fi
+          
+          # Scheduled runs - check day/date
+          DAY_OF_WEEK=$(date +%u)  # 1-7, where 5 = Friday
+          DAY_OF_MONTH=$(date +%d)
+          
+          if [ "${{ matrix.schedule }}" = "weekly" ] && [ "$DAY_OF_WEEK" = "5" ]; then
+            echo "run=true" >> $GITHUB_OUTPUT
+            echo "Running weekly sync on Friday: ${{ matrix.name }}"
+          elif [ "${{ matrix.schedule }}" = "monthly" ] && [ "$DAY_OF_MONTH" = "01" ]; then
+            echo "run=true" >> $GITHUB_OUTPUT
+            echo "Running monthly sync on 1st: ${{ matrix.name }}"
+          else
+            echo "run=false" >> $GITHUB_OUTPUT
+            echo "Skipping ${{ matrix.name }} (not scheduled for today)"
+          fi
+      
+      - name: Run targeted sync
+        if: steps.should_run.outputs.run == 'true'
+        run: |
+          python3 main.py \
+            --target ${{ matrix.target }} \
+            --status-filter "${{ matrix.status_filter }}" \
+            --update-only "${{ matrix.update_only }}" \
+            --force-update

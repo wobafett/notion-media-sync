@@ -383,10 +383,35 @@ class NotionTMDbSync:
             logger.error(f"Error loading database schema: {e}")
             self.property_mapping = {}
     
-    def get_notion_pages(self) -> List[Dict]:
-        """Get all pages from the Notion database."""
+    def get_notion_pages(self, status_filter: Optional[str] = None) -> List[Dict]:
+        """Get all pages from the Notion database, optionally filtered by status."""
+        filter_params = None
+        
+        if status_filter:
+            # Build Notion filter for status property
+            status_property_id = self.property_mapping.get('status_property_id')
+            if status_property_id:
+                # Handle multiple statuses (e.g., "Released,Ended")
+                statuses = [s.strip() for s in status_filter.split(',')]
+                
+                if len(statuses) == 1:
+                    filter_params = {
+                        "property": status_property_id,
+                        "status": {"equals": statuses[0]}
+                    }
+                    logger.info(f"Filtering pages by status: {statuses[0]}")
+                else:
+                    # OR filter for multiple statuses
+                    filter_params = {
+                        "or": [
+                            {"property": status_property_id, "status": {"equals": s}}
+                            for s in statuses
+                        ]
+                    }
+                    logger.info(f"Filtering pages by statuses: {', '.join(statuses)}")
+        
         logger.info(f"Fetching pages from database {self.database_id}")
-        return self.notion.query_database(self.database_id)
+        return self.notion.query_database(self.database_id, filter_params)
     
     def extract_current_data(self, page: Dict) -> Dict:
         """Extract current data from a Notion page for comparison."""
@@ -559,11 +584,57 @@ class NotionTMDbSync:
         else:
             logger.warning("Failed to backfill content type for page %s", page_id)
     
-    def compare_and_format_properties(self, current_data: Dict, tmdb_data: Dict, content_type: str) -> tuple[Dict, bool]:
-        """Compare current data with TMDb data and return only changed properties."""
+    def compare_and_format_properties(self, current_data: Dict, tmdb_data: Dict, content_type: str, update_only: Optional[List[str]] = None) -> tuple[Dict, bool]:
+        """
+        Compare current data with TMDb data and return only changed properties.
+        
+        Args:
+            current_data: Current Notion page data
+            tmdb_data: TMDb API data
+            content_type: 'movie' or 'tv'
+            update_only: List of property names to update (e.g., ['rating', 'watch_providers'])
+                        If None, update all properties as before.
+        """
         try:
             new_properties = {}
             has_changes = False
+            
+            # Map friendly names to property IDs
+            property_name_map = {
+                'rating': 'rating_property_id',
+                'watch_providers': 'watch_providers_property_id',
+                'seasons': 'seasons_property_id',
+                'total_episodes': 'episodes_property_id',
+                'latest_episode': 'released_episodes_property_id',
+                'next_episode': 'next_episode_property_id',
+                'genres': 'genres_property_id',
+                'cast': 'cast_property_id',
+                'director': 'director_property_id',
+                'creator': 'creator_property_id',
+                'production_companies': 'production_companies_property_id',
+                'description': 'description_property_id',
+                'release_date': 'release_date_property_id',
+                'runtime': 'runtime_minutes_property_id',
+                'tagline': 'tagline_property_id',
+                'original_language': 'original_language_property_id',
+                'production_countries': 'production_countries_property_id',
+                'collection': 'collection_property_id',
+            }
+            
+            # If update_only specified, convert to property ID set
+            allowed_properties = None
+            if update_only:
+                allowed_properties = set()
+                for name in update_only:
+                    prop_id_key = property_name_map.get(name, f"{name}_property_id")
+                    allowed_properties.add(prop_id_key)
+                logger.info(f"Limiting updates to properties: {', '.join(update_only)}")
+            
+            # Helper function to check if property should be updated
+            def should_update_property(property_id_key: str) -> bool:
+                if allowed_properties is None:
+                    return True  # Update all if no filter specified
+                return property_id_key in allowed_properties
             
             # Helper function to compare values
             def values_differ(current_val, new_val):
@@ -677,7 +748,7 @@ class NotionTMDbSync:
                             'number': tmdb_data['runtime']
                         }
                         has_changes = True
-            elif content_type == 'tv' and tmdb_data.get('number_of_seasons') and self.property_mapping['seasons_property_id']:
+            elif should_update_property('seasons_property_id') and content_type == 'tv' and tmdb_data.get('number_of_seasons') and self.property_mapping['seasons_property_id']:
                 current_seasons = current_data.get('seasons_property_id')
                 if values_differ(current_seasons, tmdb_data['number_of_seasons']):
                     property_key = self._get_property_key(self.property_mapping['seasons_property_id'])
@@ -722,7 +793,7 @@ class NotionTMDbSync:
         """Compare extended properties and add changes to new_properties."""
         try:
             # Episodes (TV shows) - Total planned episodes (including future seasons)
-            if content_type == 'tv' and tmdb_data.get('number_of_episodes') and self.property_mapping['episodes_property_id']:
+            if should_update_property('episodes_property_id') and content_type == 'tv' and tmdb_data.get('number_of_episodes') and self.property_mapping['episodes_property_id']:
                 current_episodes = current_data.get('episodes_property_id')
                 if current_episodes != tmdb_data['number_of_episodes']:
                     property_key = self._get_property_key(self.property_mapping['episodes_property_id'])
@@ -733,7 +804,7 @@ class NotionTMDbSync:
                         has_changes = True
             
             # Released Episodes (TV shows) - Last episode number that has aired
-            if content_type == 'tv' and self.property_mapping['released_episodes_property_id']:
+            if should_update_property('released_episodes_property_id') and content_type == 'tv' and self.property_mapping['released_episodes_property_id']:
                 released_episodes = None
                 
                 # Use last_episode_to_air to get the actual last aired episode
@@ -772,7 +843,7 @@ class NotionTMDbSync:
                             has_changes = True
             
             # Next Episode Air Date (TV shows)
-            if content_type == 'tv' and self.property_mapping['next_episode_property_id']:
+            if should_update_property('next_episode_property_id') and content_type == 'tv' and self.property_mapping['next_episode_property_id']:
                 next_episode = tmdb_data.get('next_episode_to_air')
                 next_air_date = None
                 
@@ -884,7 +955,7 @@ class NotionTMDbSync:
                         has_changes = True
             
             # Watch Providers (using TMDb)
-            if self.property_mapping['watch_providers_property_id'] and tmdb_data.get('id'):
+            if should_update_property('watch_providers_property_id') and self.property_mapping['watch_providers_property_id'] and tmdb_data.get('id'):
                 # Get watch providers from TMDb
                 watch_providers_data = self.tmdb.get_watch_providers(content_type, tmdb_data['id'])
                 if watch_providers_data:
@@ -953,7 +1024,7 @@ class NotionTMDbSync:
                         has_changes = True
             
             # Rating
-            if tmdb_data.get('vote_average') is not None and self.property_mapping['rating_property_id']:
+            if should_update_property('rating_property_id') and tmdb_data.get('vote_average') is not None and self.property_mapping['rating_property_id']:
                 current_rating = current_data.get('rating_property_id')
                 tmdb_rating = tmdb_data['vote_average']
                 
@@ -1231,8 +1302,23 @@ class NotionTMDbSync:
         """Get the property key for a given property ID."""
         return self.property_id_to_key.get(property_id)
     
-    def sync_page(self, page: Dict, force_icons: bool = False, force_all: bool = False, force_update: bool = False) -> Optional[bool]:
+    def sync_page(
+        self, 
+        page: Dict, 
+        force_icons: bool = False, 
+        force_all: bool = False, 
+        force_update: bool = False,
+        update_only: Optional[List[str]] = None,
+    ) -> Optional[bool]:
         """Sync a single page with TMDb data.
+        
+        Args:
+            page: Notion page object
+            force_icons: Force update page icons
+            force_all: Process all pages (including completed)
+            force_update: Force update even if page is completed
+            update_only: List of property names to update (e.g., ['rating', 'watch_providers'])
+        
         Returns:
             True: Successfully processed (with or without changes)
             False: Failed to process due to error
@@ -1310,7 +1396,7 @@ class NotionTMDbSync:
                     return True  # Skip but don't count as failed
             
             # Compare current data with TMDb data and get only changed properties
-            new_properties, has_changes = self.compare_and_format_properties(current_data, details, content_type)
+            new_properties, has_changes = self.compare_and_format_properties(current_data, details, content_type, update_only=update_only)
             
             # Check if cover needs updating (only if no cover exists)
             new_cover_url = None
@@ -1541,25 +1627,30 @@ class NotionTMDbSync:
 
         return results
 
-    def run_sync(self, force_icons: bool = False, force_all: bool = False, max_workers: int = 3, force_update: bool = False) -> Dict:
+    def run_sync(
+        self, 
+        force_icons: bool = False, 
+        force_all: bool = False, 
+        max_workers: int = 3, 
+        force_update: bool = False,
+        status_filter: Optional[str] = None,
+        update_only: Optional[List[str]] = None,
+    ) -> Dict:
         """Run the complete synchronization process."""
-        if force_icons and force_all and force_update:
-            logger.info("Starting Notion-TMDb synchronization (FORCE ICONS + FORCE ALL + FORCE UPDATE MODE)")
-        elif force_icons and force_all:
-            logger.info("Starting Notion-TMDb synchronization (FORCE ICONS + FORCE ALL MODE)")
-        elif force_icons and force_update:
-            logger.info("Starting Notion-TMDb synchronization (FORCE ICONS + FORCE UPDATE MODE)")
-        elif force_all and force_update:
-            logger.info("Starting Notion-TMDb synchronization (FORCE ALL + FORCE UPDATE MODE)")
-        elif force_icons:
-            logger.info("Starting Notion-TMDb synchronization (FORCE ICONS MODE)")
-        elif force_all:
-            logger.info("Starting Notion-TMDb synchronization (FORCE ALL MODE)")
-        elif force_update:
-            logger.info("Starting Notion-TMDb synchronization (FORCE UPDATE MODE)")
-        else:
-            logger.info("Starting Notion-TMDb synchronization")
+        mode_parts = []
+        if force_icons:
+            mode_parts.append("FORCE ICONS")
+        if force_all:
+            mode_parts.append("FORCE ALL")
+        if force_update:
+            mode_parts.append("FORCE UPDATE")
+        if status_filter:
+            mode_parts.append(f"STATUS={status_filter}")
+        if update_only:
+            mode_parts.append(f"UPDATE={','.join(update_only)}")
         
+        mode_str = " + ".join(mode_parts) if mode_parts else "STANDARD"
+        logger.info(f"Starting Notion-TMDb synchronization ({mode_str} MODE)")
         logger.info(f"Using {max_workers} parallel workers for processing")
         
         # Validate that required properties are found
@@ -1572,7 +1663,7 @@ class NotionTMDbSync:
             return {'success': False, 'message': 'No content type property found'}
         
         start_time = time.time()
-        pages = self.get_notion_pages()
+        pages = self.get_notion_pages(status_filter=status_filter)
         
         if not pages:
             logger.warning("No pages found in database")
@@ -1588,7 +1679,7 @@ class NotionTMDbSync:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all tasks
             future_to_page = {
-                executor.submit(self.sync_page, page, force_icons, force_all, force_update): page 
+                executor.submit(self.sync_page, page, force_icons, force_all, force_update, update_only): page 
                 for page in pages
             }
             
@@ -1691,6 +1782,8 @@ def run_sync(
     last_page: bool = False,
     page_id: Optional[str] = None,
     force_update: bool = False,
+    status_filter: Optional[str] = None,
+    update_only: Optional[List[str]] = None,
 ) -> Dict:
     """Run the Movies/TV sync with the provided options."""
     enforce_worker_limits(workers)
@@ -1720,6 +1813,8 @@ def run_sync(
         force_all=force_all,
         max_workers=workers,
         force_update=force_update,
+        status_filter=status_filter,
+        update_only=update_only,
     )
 
 

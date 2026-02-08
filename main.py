@@ -87,6 +87,16 @@ def build_parser(targets) -> argparse.ArgumentParser:
         type=str,
         help="Books target: Google Books URL to create new page",
     )
+    parser.add_argument(
+        "--status-filter",
+        type=str,
+        help="Movies target: Filter pages by status (e.g., 'Released', 'Released,Ended')",
+    )
+    parser.add_argument(
+        "--update-only",
+        type=str,
+        help="Movies target: Comma-separated list of properties to update (e.g., 'rating,watch_providers')",
+    )
     return parser
 
 
@@ -151,6 +161,11 @@ def main(default_target: Optional[str] = None):
             run_options["spotify_url"] = args.spotify_url
         if getattr(args, "google_books_url", None):
             run_options["google_books_url"] = args.google_books_url
+        if getattr(args, "status_filter", None):
+            run_options["status_filter"] = args.status_filter
+        if getattr(args, "update_only", None):
+            # Parse comma-separated list
+            run_options["update_only"] = [prop.strip() for prop in args.update_only.split(',')]
 
         result = target.run_sync(**run_options)
     except (RuntimeError, ValueError) as exc:
