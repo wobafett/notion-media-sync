@@ -1292,18 +1292,47 @@ class NotionTMDbSync:
             # Compare current data with TMDb data and get only changed properties
             new_properties, has_changes = self.compare_and_format_properties(current_data, details, content_type)
             
+            # #region agent log
+            import json, time
+            with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({"id":f"log_{int(time.time()*1000)}_a","timestamp":int(time.time()*1000),"location":"sync.py:1293","message":"TMDb details received","data":{"title":title,"tmdb_id":details.get('id'),"has_backdrop_path":bool(details.get('backdrop_path')),"backdrop_path_value":details.get('backdrop_path'),"poster_path":details.get('poster_path')},"runId":"cover_debug","hypothesisId":"A,D,E"})+'\n')
+            # #endregion
+            
             # Check if cover needs updating (only if no cover exists)
             new_cover_url = None
             current_cover_url = current_data.get('_cover_url')
+            
+            # #region agent log
+            with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({"id":f"log_{int(time.time()*1000)}_b","timestamp":int(time.time()*1000),"location":"sync.py:1297","message":"Current cover status","data":{"title":title,"current_cover_url":current_cover_url,"has_existing_cover":bool(current_cover_url)},"runId":"cover_debug","hypothesisId":"B"})+'\n')
+            # #endregion
             
             # Only set cover if there's no existing cover
             if details.get('backdrop_path') and not current_cover_url:
                 new_cover_url = f"https://image.tmdb.org/t/p/original{details['backdrop_path']}"
                 logger.info(f"Setting cover image for {title} (no existing cover)")
+                # #region agent log
+                with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"id":f"log_{int(time.time()*1000)}_c","timestamp":int(time.time()*1000),"location":"sync.py:1300","message":"Cover condition TRUE - will set cover","data":{"title":title,"new_cover_url":new_cover_url},"runId":"cover_debug","hypothesisId":"C"})+'\n')
+                # #endregion
             elif current_cover_url:
                 logger.info(f"Skipping cover update for {title} (cover already exists)")
+                # #region agent log
+                with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"id":f"log_{int(time.time()*1000)}_d","timestamp":int(time.time()*1000),"location":"sync.py:1303","message":"Cover condition FALSE - cover exists","data":{"title":title,"reason":"cover_already_exists"},"runId":"cover_debug","hypothesisId":"B,C"})+'\n')
+                # #endregion
+            else:
+                # #region agent log
+                with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"id":f"log_{int(time.time()*1000)}_e","timestamp":int(time.time()*1000),"location":"sync.py:1305","message":"Cover condition FALSE - no backdrop_path","data":{"title":title,"reason":"no_backdrop_path_in_tmdb"},"runId":"cover_debug","hypothesisId":"A,E"})+'\n')
+                # #endregion
             
             cover_changed = new_cover_url is not None
+            
+            # #region agent log
+            with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({"id":f"log_{int(time.time()*1000)}_f","timestamp":int(time.time()*1000),"location":"sync.py:1306","message":"Update decision values","data":{"title":title,"has_changes":has_changes,"cover_changed":cover_changed,"force_icons":force_icons,"will_update":has_changes or cover_changed or force_icons},"runId":"cover_debug","hypothesisId":"C"})+'\n')
+            # #endregion
             
             # Only update if there are changes (or if forcing icon updates)
             if not has_changes and not cover_changed and not force_icons:
