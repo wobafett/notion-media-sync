@@ -305,7 +305,7 @@ class MusicBrainzAPI:
             
             url = f"{self.base_url}/release/{mbid}"
             params = {
-                'inc': 'artists+labels+recordings+release-groups+tags+ratings+genres+url-rels',
+                'inc': 'artists+labels+recordings+release-groups+ratings+genres+url-rels',
                 'fmt': 'json'
             }
             
@@ -329,7 +329,7 @@ class MusicBrainzAPI:
             
             url = f"{self.base_url}/release-group/{mbid}"
             params = {
-                'inc': 'releases+tags+ratings+genres',
+                'inc': 'releases+ratings+genres',
                 'fmt': 'json'
             }
             
