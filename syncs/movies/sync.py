@@ -170,6 +170,7 @@ class TMDbAPI:
             'FXNow': 'FX',
             'Spectrum On Demand': 'Spectrum',
             'Shout! Factory Amazon Channel': 'Shout! Factory',
+            'Shout! Factory TV': 'Shout! Factory',
             'MUBI Amazon Channel': 'MUBI',
             'Cinemax Amazon Channel': 'Cinemax',
             'Cinemax Apple TV Channel': 'Cinemax',
@@ -177,14 +178,34 @@ class TMDbAPI:
             'Showtime Roku Premium Channel': 'Showtime',
             'Starz Amazon Channel': 'Starz',
             'Starz Roku Premium Channel': 'Starz',
+            # ALLBLK consolidation
+            'ALLBLK Apple TV Channel': 'ALLBLK',
+            'ALLBLK Amazon Channel': 'ALLBLK',
+            # Paramount consolidation
+            'Paramount+ Essential': 'Paramount+',
+            # Case-insensitive Adult Swim
+            'Adultswim': 'Adult Swim',
         }
         
         # Apply specific service mappings
         normalized = service_mappings.get(normalized, normalized)
         
-        # Pattern 4: Handle "with Showtime" and similar combinations
+        # Pattern 4: Additional case-insensitive mappings for common variations
+        # Check lowercase version for case-insensitive matches
+        lower_normalized = normalized.lower()
+        case_insensitive_mappings = {
+            'adultswim': 'Adult Swim',
+            'hbo max': 'HBO Max',  # Ensures consistent spacing
+        }
+        if lower_normalized in case_insensitive_mappings:
+            normalized = case_insensitive_mappings[lower_normalized]
+        
+        # Pattern 5: Handle "with Showtime" and similar combinations
         if ' with Showtime' in normalized:
             normalized = normalized.replace(' with Showtime', '')
+        
+        # Final cleanup: trim any remaining whitespace
+        normalized = normalized.strip()
         
         return normalized
     
