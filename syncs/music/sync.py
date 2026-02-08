@@ -5653,7 +5653,8 @@ class NotionMusicBrainzSync:
         last_page: bool = False,
         created_after: Optional[str] = None,
         page_id: Optional[str] = None,
-        spotify_url: Optional[str] = None
+        spotify_url: Optional[str] = None,
+        dry_run: bool = False
     ) -> Dict:
         """Run the synchronization process for specified database(s).
         
@@ -5836,9 +5837,12 @@ def run_sync(
     last_page: bool = False,
     created_after: Optional[str] = None,
     page_id: Optional[str] = None,
-    spotify_url: Optional[str] = None
+    spotify_url: Optional[str] = None,
+    dry_run: bool = False
 ) -> Dict:
     """Run the MusicBrainz sync with the provided options."""
+    if dry_run:
+        logger.warning("dry_run parameter not yet fully implemented for music sync - proceeding with normal sync")
     # Spotify URL creation mode takes precedence
     if spotify_url and not page_id:
         return _build_sync_instance().run_sync(spotify_url=spotify_url)
@@ -5865,7 +5869,8 @@ def run_sync(
         last_page=last_page,
         created_after=created_after,
         page_id=page_id,
-        spotify_url=spotify_url
+        spotify_url=spotify_url,
+        dry_run=dry_run
     )
 
 

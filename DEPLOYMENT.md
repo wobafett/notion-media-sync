@@ -35,8 +35,8 @@ Add these secrets to your GitHub repository (`Settings > Secrets and variables >
 
 ### ⚙️ Workflow Overview
 
-- **File**: `.github/workflows/notion-sync.yml`
-- **Dispatch inputs**: `target`, `page_id` (single-page webhook mode), `workers`, `database`, `created_after`, and booleans for `force_icons`, `force_update`, `force_research`, `comicvine_scrape`, `dry_run`
+- **File**: `.github/workflows/sync-page.yml, create-from-url.yml, and sync-database.yml`
+- **Dispatch inputs**: `target`, `page_id` (single-page webhook mode), `workers`, `database`, `created_after`, and booleans for `force_icons`, `force_update`, `force_update`, `comicvine_scrape`, `dry_run`
 - **Schedule**: No active cron by default; a commented placeholder (`0 0 * * *`) lives inside the workflow so you can uncomment / duplicate when you’re ready for timed runs.
 - **Modes**:
   - If `page_id` is provided, the job calls `python3 webhook.py` to auto-route the page’s database.
@@ -128,7 +128,7 @@ spotify_url: "https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6"
 ### 🔧 Customization
 
 **Schedule Changes:**
-Uncomment or duplicate the placeholder cron inside `.github/workflows/notion-sync.yml`:
+Uncomment or duplicate the placeholder cron inside `.github/workflows/sync-page.yml, create-from-url.yml, and sync-database.yml`:
 ```yaml
 schedule:
   - cron: '0 0 * * *' # Example: run nightly at midnight UTC

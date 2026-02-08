@@ -1,0 +1,50 @@
+name: Create from URL
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Paste any supported URL (Spotify or Google Books)'
+        required: true
+        type: string
+
+jobs:
+  create-from-url:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Create page from URL
+        env:
+          NOTION_INTERNAL_INTEGRATION_SECRET: ${{ secrets.NOTION_INTERNAL_INTEGRATION_SECRET }}
+          NOTION_BOOKS_DATABASE_ID: ${{ secrets.NOTION_BOOKS_DATABASE_ID }}
+          NOTION_MOVIES_DATABASE_ID: ${{ secrets.NOTION_MOVIES_DATABASE_ID }}
+          NOTION_GAMES_DATABASE_ID: ${{ secrets.NOTION_GAMES_DATABASE_ID }}
+          NOTION_SONGS_DATABASE_ID: ${{ secrets.NOTION_SONGS_DATABASE_ID }}
+          NOTION_ALBUMS_DATABASE_ID: ${{ secrets.NOTION_ALBUMS_DATABASE_ID }}
+          NOTION_ARTISTS_DATABASE_ID: ${{ secrets.NOTION_ARTISTS_DATABASE_ID }}
+          NOTION_LABELS_DATABASE_ID: ${{ secrets.NOTION_LABELS_DATABASE_ID }}
+          NOTION_LOCATIONS_DATABASE_ID: ${{ secrets.NOTION_LOCATIONS_DATABASE_ID }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          IGDB_CLIENT_ID: ${{ secrets.IGDB_CLIENT_ID }}
+          IGDB_CLIENT_SECRET: ${{ secrets.IGDB_CLIENT_SECRET }}
+          MUSICBRAINZ_USER_AGENT: ${{ secrets.MUSICBRAINZ_USER_AGENT }}
+          GOOGLE_BOOKS_API_KEY: ${{ secrets.GOOGLE_BOOKS_API_KEY }}
+          COMICVINE_API_KEY: ${{ secrets.COMICVINE_API_KEY }}
+        run: |
+          set -euo pipefail
+          python webhook.py --url "${{ inputs.url }}"

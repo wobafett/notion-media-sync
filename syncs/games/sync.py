@@ -1662,8 +1662,10 @@ class NotionIGDbSync:
         logger.info(f"Finished page-specific sync for page {page_id}")
         return results
     
-    def run_sync(self, force_icons: bool = False, force_update: bool = False, max_workers: int = 3, last_page: bool = False, page_id: Optional[str] = None, created_after: Optional[str] = None) -> Dict:
+    def run_sync(self, force_icons: bool = False, force_update: bool = False, max_workers: int = 3, last_page: bool = False, page_id: Optional[str] = None, created_after: Optional[str] = None, dry_run: bool = False) -> Dict:
         """Run the complete synchronization process."""
+        if dry_run:
+            logger.warning("dry_run parameter not yet fully implemented for games sync - proceeding with normal sync")
         # Handle page-specific sync
         if page_id:
             if last_page:
@@ -1814,6 +1816,7 @@ def run_sync(
     last_page: bool = False,
     page_id: Optional[str] = None,
     created_after: Optional[str] = None,
+    dry_run: bool = False,
 ) -> Dict:
     """Run the Games sync with the provided options."""
     enforce_worker_limits(workers)
@@ -1829,6 +1832,7 @@ def run_sync(
         last_page=last_page,
         page_id=page_id,
         created_after=created_after,
+        dry_run=dry_run,
     )
 
 

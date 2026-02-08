@@ -1681,8 +1681,11 @@ class NotionTMDbSync:
         status_filter: Optional[str] = None,
         update_only: Optional[List[str]] = None,
         created_after: Optional[str] = None,
+        dry_run: bool = False,
     ) -> Dict:
         """Run the complete synchronization process."""
+        if dry_run:
+            logger.warning("dry_run parameter not yet fully implemented for movies sync - proceeding with normal sync")
         mode_parts = []
         if force_icons:
             mode_parts.append("FORCE ICONS")
@@ -1828,8 +1831,9 @@ def run_sync(
     page_id: Optional[str] = None,
     force_update: bool = False,
     status_filter: Optional[str] = None,
-    update_only: Optional[List[str]] = None,
+    update_only: Optional[str] = None,
     created_after: Optional[str] = None,
+    dry_run: bool = False,
 ) -> Dict:
     """Run the Movies/TV sync with the provided options."""
     enforce_worker_limits(workers)
@@ -1862,6 +1866,7 @@ def run_sync(
         status_filter=status_filter,
         update_only=update_only,
         created_after=created_after,
+        dry_run=dry_run,
     )
 
 

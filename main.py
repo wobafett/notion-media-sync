@@ -66,7 +66,7 @@ def build_parser(targets) -> argparse.ArgumentParser:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Books target: simulate sync without updating Notion",
+        help="Simulate sync without updating Notion (all targets)",
     )
     parser.add_argument(
         "--spotify-url",

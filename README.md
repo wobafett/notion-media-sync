@@ -69,19 +69,32 @@ This repository now hosts the combined sync logic for **Games**, **Music**, **Mo
 - `python3 webhook.py --page-id <notion_page_id> [options]` (auto-routes the page to the correct target)
 - Backwards-compatible shims (`notion_igdb_sync.py`, `notion_musicbrainz_sync.py`, etc.) simply call `main.py` with their default targets.
 
-### GitHub Actions workflow
+### GitHub Actions Workflows
 
-The repo includes `.github/workflows/notion-sync.yml`, which exposes a manual `workflow_dispatch` form:
+The repo includes **3 focused workflows** for different operations:
 
-- Required input: `target` (games/music/movies/books)
-- Optional inputs: `page_id` (single page mode via webhook), `workers`, `database`, `created_after`, and the standard flags `force_icons`, `force_update`, `force_research`, `comicvine_scrape`, `dry_run`
-- Secrets: set `NOTION_INTERNAL_INTEGRATION_SECRET`, the relevant `NOTION_*_DATABASE_ID` values, and API keys (IGDB, TMDb, MusicBrainz, Google Books, ComicVine, etc.) in the repository settings
-- A placeholder cron entry is commented out inside the workflow—uncomment or duplicate it when you’re ready for scheduled runs.
+#### 1. **Sync Single Page** (`.github/workflows/sync-page.yml`)
+- **Purpose**: Sync any existing Notion page by ID or URL
+- **Inputs**: `page_id` (required), `force_update`, `comicvine_scrape`
+- **Use case**: Webhooks, manual page updates, iOS shortcuts
 
-Manual dispatch lets you test the router/webhook end-to-end in the cloud without needing four separate workflows or repos.
+#### 2. **Create from URL** (`.github/workflows/create-from-url.yml`)
+- **Purpose**: Create new pages from external URLs
+- **Inputs**: `url` (required) - Spotify or Google Books URL (auto-detected)
+- **Use case**: iOS shortcuts, quick page creation from browser
 
-### Spotify URL Input (Music Syncs Only)
+#### 3. **Sync Full Database** (`.github/workflows/sync-database.yml`)
+- **Purpose**: Sync entire databases with optional filters
+- **Inputs**: `target` (required), `force_update`, `dry_run`, `created_after`, `database` (music only)
+- **Use case**: Periodic full syncs, bulk updates, testing with filters
 
+**Secrets required**: Set `NOTION_INTERNAL_INTEGRATION_SECRET`, `NOTION_*_DATABASE_ID` values, and API keys in repository settings.
+
+For scheduled syncs, see `.github/workflows/scheduled-syncs.yml`.
+
+### Spotify and Google Books URL Input
+
+URLs can now be provided for two purposes:
 For music syncs, you can now provide Spotify URLs for two purposes:
 1. **Create new pages** directly from Spotify URLs (no manual page creation needed)
 2. **Improve matching accuracy** for existing pages
