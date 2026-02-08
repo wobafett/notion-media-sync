@@ -3013,6 +3013,9 @@ class NotionMusicBrainzSync:
             release_group = release_data.get('release-group') or {}
             if self.albums_properties.get('genres'):
                 prop_key = self._get_property_key(self.albums_properties['genres'], 'albums')
+                # #region agent log
+                import json; open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a').write(json.dumps({"timestamp": __import__('time').time() * 1000, "location": "sync.py:3015", "message": "Genre pooling start", "data": {"prop_key": prop_key, "has_release_group": bool(release_group), "has_genres_prop": bool(self.albums_properties.get('genres'))}, "hypothesisId": "H5"}) + '\n')
+                # #endregion
                 if prop_key:
                     genre_candidates = []
                     if release_group.get('genres'):
@@ -3021,6 +3024,9 @@ class NotionMusicBrainzSync:
                             for genre in release_group['genres']
                             if isinstance(genre, dict) and genre.get('name')
                         )
+                    # #region agent log
+                    import json; open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a').write(json.dumps({"timestamp": __import__('time').time() * 1000, "location": "sync.py:3023", "message": "After release-group genres", "data": {"count": len(genre_candidates), "genres": genre_candidates[:10]}, "hypothesisId": "H6"}) + '\n')
+                    # #endregion
                     if release_data.get('genres'):
                         genre_candidates.extend(
                             genre['name']
@@ -3039,8 +3045,14 @@ class NotionMusicBrainzSync:
                             for tag in release_data['tags']
                             if isinstance(tag, dict) and tag.get('name')
                         )
+                    # #region agent log
+                    import json; open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a').write(json.dumps({"timestamp": __import__('time').time() * 1000, "location": "sync.py:3042", "message": "After MB genres/tags", "data": {"count": len(genre_candidates), "genres": genre_candidates[:10]}, "hypothesisId": "H6"}) + '\n')
+                    # #endregion
                     
                     # Add Spotify album genres if available
+                    # #region agent log
+                    import json; open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a').write(json.dumps({"timestamp": __import__('time').time() * 1000, "location": "sync.py:3044", "message": "Checking for Spotify album genres", "data": {"has_relations": bool(release_data.get('relations')), "relations_count": len(release_data.get('relations', []))}, "hypothesisId": "H1"}) + '\n')
+                    # #endregion
                     if release_data.get('relations'):
                         for relation in release_data.get('relations', []):
                             if relation.get('type', '').lower() in ['streaming', 'free streaming']:
@@ -3051,8 +3063,14 @@ class NotionMusicBrainzSync:
                                     url_str = str(url_resource)
                                 
                                 if url_str and 'spotify.com/album/' in url_str:
+                                    # #region agent log
+                                    import json; open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a').write(json.dumps({"timestamp": __import__('time').time() * 1000, "location": "sync.py:3053", "message": "Found Spotify album URL in relations", "data": {"url": url_str}, "hypothesisId": "H1"}) + '\n')
+                                    # #endregion
                                     spotify_id = url_str.split('/')[-1].split('?')[0]
                                     spotify_album = self.mb._get_spotify_album_by_id(spotify_id)
+                                    # #region agent log
+                                    import json; open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a').write(json.dumps({"timestamp": __import__('time').time() * 1000, "location": "sync.py:3059", "message": "Fetched Spotify album data", "data": {"has_data": bool(spotify_album), "has_genres": bool(spotify_album and spotify_album.get('genres')), "genres": spotify_album.get('genres', []) if spotify_album else []}, "hypothesisId": "H2"}) + '\n')
+                                    # #endregion
                                     if spotify_album and spotify_album.get('genres'):
                                         genre_candidates.extend(spotify_album['genres'])
                                         logger.debug(f"Added {len(spotify_album['genres'])} genres from Spotify album")
@@ -3064,6 +3082,9 @@ class NotionMusicBrainzSync:
                         artist_mbid = artist.get('id')
                         if artist_mbid:
                             artist_data = self.mb.get_artist(artist_mbid)
+                            # #region agent log
+                            import json; open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a').write(json.dumps({"timestamp": __import__('time').time() * 1000, "location": "sync.py:3088", "message": "Fetched MB artist data", "data": {"has_data": bool(artist_data), "has_relations": bool(artist_data and artist_data.get('relations')), "relations_count": len(artist_data.get('relations', [])) if artist_data else 0}, "hypothesisId": "H1"}) + '\n')
+                            # #endregion
                             if artist_data and artist_data.get('relations'):
                                 for relation in artist_data.get('relations', []):
                                     url_resource = relation.get('url', {})
@@ -3073,20 +3094,35 @@ class NotionMusicBrainzSync:
                                         url_str = str(url_resource)
                                     
                                     if url_str and 'spotify' in url_str.lower() and '/artist/' in url_str:
+                                        # #region agent log
+                                        import json; open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a').write(json.dumps({"timestamp": __import__('time').time() * 1000, "location": "sync.py:3100", "message": "Found Spotify artist URL in relations", "data": {"url": url_str}, "hypothesisId": "H1"}) + '\n')
+                                        # #endregion
                                         spotify_id = url_str.split('/')[-1].split('?')[0]
                                         spotify_artist = self.mb._get_spotify_artist_by_id(spotify_id)
+                                        # #region agent log
+                                        import json; open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a').write(json.dumps({"timestamp": __import__('time').time() * 1000, "location": "sync.py:3106", "message": "Fetched Spotify artist data", "data": {"has_data": bool(spotify_artist), "has_genres": bool(spotify_artist and spotify_artist.get('genres')), "genres": spotify_artist.get('genres', []) if spotify_artist else []}, "hypothesisId": "H3"}) + '\n')
+                                        # #endregion
                                         if spotify_artist and spotify_artist.get('genres'):
                                             genre_candidates.extend(spotify_artist['genres'])
                                             logger.debug(f"Added {len(spotify_artist['genres'])} genres from Spotify artist")
                                         break
                     
+                    # #region agent log
+                    import json; open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a').write(json.dumps({"timestamp": __import__('time').time() * 1000, "location": "sync.py:3113", "message": "Before build_multi_select_options", "data": {"candidates_count": len(genre_candidates), "candidates": genre_candidates[:15]}, "hypothesisId": "H4"}) + '\n')
+                    # #endregion
                     genre_options = build_multi_select_options(
                         genre_candidates,
                         limit=10,
                         context='album genres',
                     )
+                    # #region agent log
+                    import json; open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a').write(json.dumps({"timestamp": __import__('time').time() * 1000, "location": "sync.py:3119", "message": "After build_multi_select_options", "data": {"options_count": len(genre_options) if genre_options else 0, "options": genre_options if genre_options else []}, "hypothesisId": "H4"}) + '\n')
+                    # #endregion
                     if genre_options:
                         properties[prop_key] = {'multi_select': genre_options}
+                        # #region agent log
+                        import json; open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a').write(json.dumps({"timestamp": __import__('time').time() * 1000, "location": "sync.py:3123", "message": "Set genres property", "data": {"prop_key": prop_key, "options_count": len(genre_options)}, "hypothesisId": "H5"}) + '\n')
+                        # #endregion
             
             # Album Type (from release-group primary-type)
             if release_data.get('release-group') and release_data['release-group'].get('primary-type') and self.albums_properties.get('type'):
