@@ -3012,7 +3012,7 @@ class NotionMusicBrainzSync:
                     if prop_key:
                         properties[prop_key] = {'number': disc_count}
             
-            # Genres/Tags combination for albums
+            # Genres for albums (excluding tags - too noisy)
             release_group = release_data.get('release-group') or {}
             
             # Fetch full release-group data with genres if we have a release-group ID
@@ -3026,29 +3026,19 @@ class NotionMusicBrainzSync:
                 prop_key = self._get_property_key(self.albums_properties['genres'], 'albums')
                 if prop_key:
                     genre_candidates = []
+                    # Collect genres from MusicBrainz release-group
                     if release_group.get('genres'):
                         genre_candidates.extend(
                             genre['name']
                             for genre in release_group['genres']
                             if isinstance(genre, dict) and genre.get('name')
                         )
+                    # Collect genres from MusicBrainz release
                     if release_data.get('genres'):
                         genre_candidates.extend(
                             genre['name']
                             for genre in release_data['genres']
                             if isinstance(genre, dict) and genre.get('name')
-                        )
-                    if release_group.get('tags'):
-                        genre_candidates.extend(
-                            tag['name']
-                            for tag in release_group['tags']
-                            if isinstance(tag, dict) and tag.get('name')
-                        )
-                    if release_data.get('tags'):
-                        genre_candidates.extend(
-                            tag['name']
-                            for tag in release_data['tags']
-                            if isinstance(tag, dict) and tag.get('name')
                         )
                     
                     # Add Spotify album genres if available
