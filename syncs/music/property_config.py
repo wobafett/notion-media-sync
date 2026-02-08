@@ -133,11 +133,10 @@ LABELS_AREA_PROPERTY_ID = "%3D%40Hc"  # Area (relation)
 
 FIELD_BEHAVIOR = {
     # Fields that merge MusicBrainz data with existing data
-    'artists_tags_property_id': 'merge',
-    'albums_tags_property_id': 'merge',
-    'albums_format_property_id': 'merge',
-    'songs_tags_property_id': 'merge',
-    'labels_tags_property_id': 'merge',
+    'artists_genres_property_id': 'merge',
+    'albums_genres_property_id': 'merge',
+    'songs_genres_property_id': 'merge',
+    'labels_genres_property_id': 'merge',
     
     # Note: Labels are now relations, not multi-select, so they don't need merge behavior
     # Relations are always replaced with the new relation values
