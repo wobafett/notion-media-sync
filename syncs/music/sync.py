@@ -3020,20 +3020,10 @@ class NotionMusicBrainzSync:
             if release_group.get('id'):
                 full_release_group = self.mb.get_release_group(release_group['id'])
                 if full_release_group:
-                    # #region agent log
-                    logger.info(f"[DEBUG H6] Fetched full release-group - has_genres={bool(full_release_group.get('genres'))}, genres={[g.get('name') for g in full_release_group.get('genres', [])][:10]}")
-                    # #endregion
                     release_group = full_release_group
-                else:
-                    # #region agent log
-                    logger.info(f"[DEBUG H6] Failed to fetch full release-group data")
-                    # #endregion
             
             if self.albums_properties.get('genres'):
                 prop_key = self._get_property_key(self.albums_properties['genres'], 'albums')
-                # #region agent log
-                logger.info(f"[DEBUG H5] Genre pooling start - prop_key={prop_key}, has_release_group={bool(release_group)}, has_genres_prop={bool(self.albums_properties.get('genres'))}")
-                # #endregion
                 if prop_key:
                     genre_candidates = []
                     if release_group.get('genres'):
@@ -3042,9 +3032,6 @@ class NotionMusicBrainzSync:
                             for genre in release_group['genres']
                             if isinstance(genre, dict) and genre.get('name')
                         )
-                    # #region agent log
-                    logger.info(f"[DEBUG H6] After release-group genres - count={len(genre_candidates)}, genres={genre_candidates[:10]}")
-                    # #endregion
                     if release_data.get('genres'):
                         genre_candidates.extend(
                             genre['name']
@@ -3063,14 +3050,8 @@ class NotionMusicBrainzSync:
                             for tag in release_data['tags']
                             if isinstance(tag, dict) and tag.get('name')
                         )
-                    # #region agent log
-                    logger.info(f"[DEBUG H6] After MB genres/tags - count={len(genre_candidates)}, genres={genre_candidates[:10]}")
-                    # #endregion
                     
                     # Add Spotify album genres if available
-                    # #region agent log
-                    logger.info(f"[DEBUG H1] Checking for Spotify album genres - has_relations={bool(release_data.get('relations'))}, relations_count={len(release_data.get('relations', []))}, provided_spotify_url={bool(spotify_url)}")
-                    # #endregion
                     spotify_album_url = None
                     
                     # First try to get Spotify URL from MusicBrainz relations
@@ -3085,25 +3066,16 @@ class NotionMusicBrainzSync:
                                 
                                 if url_str and 'spotify.com/album/' in url_str:
                                     spotify_album_url = url_str
-                                    # #region agent log
-                                    logger.info(f"[DEBUG H1] Found Spotify album URL in relations - url={url_str}")
-                                    # #endregion
                                     break
                     
                     # If no Spotify URL in MusicBrainz relations, use the provided one (from Notion or input)
                     if not spotify_album_url and spotify_url and 'spotify.com/album/' in spotify_url:
                         spotify_album_url = spotify_url
-                        # #region agent log
-                        logger.info(f"[DEBUG H1] Using provided Spotify album URL - url={spotify_url}")
-                        # #endregion
                     
                     # Fetch Spotify album genres if we have a URL
                     if spotify_album_url:
                         spotify_id = spotify_album_url.split('/')[-1].split('?')[0]
                         spotify_album = self.mb._get_spotify_album_by_id(spotify_id)
-                        # #region agent log
-                        logger.info(f"[DEBUG H2] Fetched Spotify album data - has_data={bool(spotify_album)}, has_genres={bool(spotify_album and spotify_album.get('genres'))}, genres={spotify_album.get('genres', []) if spotify_album else []}")
-                        # #endregion
                         if spotify_album and spotify_album.get('genres'):
                             genre_candidates.extend(spotify_album['genres'])
                             logger.debug(f"Added {len(spotify_album['genres'])} genres from Spotify album")
@@ -3114,9 +3086,6 @@ class NotionMusicBrainzSync:
                         artist_mbid = artist.get('id')
                         if artist_mbid:
                             artist_data = self.mb.get_artist(artist_mbid)
-                            # #region agent log
-                            logger.info(f"[DEBUG H1] Fetched MB artist data - has_data={bool(artist_data)}, has_relations={bool(artist_data and artist_data.get('relations'))}, relations_count={len(artist_data.get('relations', [])) if artist_data else 0}")
-                            # #endregion
                             if artist_data and artist_data.get('relations'):
                                 for relation in artist_data.get('relations', []):
                                     url_resource = relation.get('url', {})
@@ -3126,35 +3095,20 @@ class NotionMusicBrainzSync:
                                         url_str = str(url_resource)
                                     
                                     if url_str and 'spotify' in url_str.lower() and '/artist/' in url_str:
-                                        # #region agent log
-                                        logger.info(f"[DEBUG H1] Found Spotify artist URL in relations - url={url_str}")
-                                        # #endregion
                                         spotify_id = url_str.split('/')[-1].split('?')[0]
                                         spotify_artist = self.mb._get_spotify_artist_by_id(spotify_id)
-                                        # #region agent log
-                                        logger.info(f"[DEBUG H3] Fetched Spotify artist data - has_data={bool(spotify_artist)}, has_genres={bool(spotify_artist and spotify_artist.get('genres'))}, genres={spotify_artist.get('genres', []) if spotify_artist else []}")
-                                        # #endregion
                                         if spotify_artist and spotify_artist.get('genres'):
                                             genre_candidates.extend(spotify_artist['genres'])
                                             logger.debug(f"Added {len(spotify_artist['genres'])} genres from Spotify artist")
                                         break
                     
-                    # #region agent log
-                    logger.info(f"[DEBUG H4] Before build_multi_select_options - candidates_count={len(genre_candidates)}, candidates={genre_candidates[:15]}")
-                    # #endregion
                     genre_options = build_multi_select_options(
                         genre_candidates,
                         limit=10,
                         context='album genres',
                     )
-                    # #region agent log
-                    logger.info(f"[DEBUG H4] After build_multi_select_options - options_count={len(genre_options) if genre_options else 0}, options={genre_options if genre_options else []}")
-                    # #endregion
                     if genre_options:
                         properties[prop_key] = {'multi_select': genre_options}
-                        # #region agent log
-                        logger.info(f"[DEBUG H5] Set genres property - prop_key={prop_key}, options_count={len(genre_options)}")
-                        # #endregion
             
             # Album Type (from release-group primary-type)
             if release_data.get('release-group') and release_data['release-group'].get('primary-type') and self.albums_properties.get('type'):
