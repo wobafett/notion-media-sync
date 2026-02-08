@@ -2825,9 +2825,12 @@ class NotionMusicBrainzSync:
             
             # Format properties
             # Skip writing Spotify URL if it was provided as input
+            # Pass the Spotify URL we have so we can fetch album genres from Spotify
+            spotify_url_for_genres = spotify_url_from_notion or (spotify_url if spotify_url else None)
             notion_props = self._format_album_properties(
                 release_data,
-                skip_spotify_url=spotify_provided_via_input
+                skip_spotify_url=spotify_provided_via_input,
+                spotify_url=spotify_url_for_genres
             )
             
             # Preserve existing relations (merge instead of replace)
@@ -2866,7 +2869,7 @@ class NotionMusicBrainzSync:
             logger.error(f"Error syncing album page {page.get('id')}: {e}")
             return False
     
-    def _format_album_properties(self, release_data: Dict, skip_spotify_url: bool = False, set_dns_on_labels: bool = False) -> Dict:
+    def _format_album_properties(self, release_data: Dict, skip_spotify_url: bool = False, set_dns_on_labels: bool = False, spotify_url: Optional[str] = None) -> Dict:
         """Format MusicBrainz release data for Notion properties."""
         properties = {}
         
@@ -3051,8 +3054,11 @@ class NotionMusicBrainzSync:
                     
                     # Add Spotify album genres if available
                     # #region agent log
-                    logger.info(f"[DEBUG H1] Checking for Spotify album genres - has_relations={bool(release_data.get('relations'))}, relations_count={len(release_data.get('relations', []))}")
+                    logger.info(f"[DEBUG H1] Checking for Spotify album genres - has_relations={bool(release_data.get('relations'))}, relations_count={len(release_data.get('relations', []))}, provided_spotify_url={bool(spotify_url)}")
                     # #endregion
+                    spotify_album_url = None
+                    
+                    # First try to get Spotify URL from MusicBrainz relations
                     if release_data.get('relations'):
                         for relation in release_data.get('relations', []):
                             if relation.get('type', '').lower() in ['streaming', 'free streaming']:
@@ -3063,18 +3069,29 @@ class NotionMusicBrainzSync:
                                     url_str = str(url_resource)
                                 
                                 if url_str and 'spotify.com/album/' in url_str:
+                                    spotify_album_url = url_str
                                     # #region agent log
                                     logger.info(f"[DEBUG H1] Found Spotify album URL in relations - url={url_str}")
                                     # #endregion
-                                    spotify_id = url_str.split('/')[-1].split('?')[0]
-                                    spotify_album = self.mb._get_spotify_album_by_id(spotify_id)
-                                    # #region agent log
-                                    logger.info(f"[DEBUG H2] Fetched Spotify album data - has_data={bool(spotify_album)}, has_genres={bool(spotify_album and spotify_album.get('genres'))}, genres={spotify_album.get('genres', []) if spotify_album else []}")
-                                    # #endregion
-                                    if spotify_album and spotify_album.get('genres'):
-                                        genre_candidates.extend(spotify_album['genres'])
-                                        logger.debug(f"Added {len(spotify_album['genres'])} genres from Spotify album")
                                     break
+                    
+                    # If no Spotify URL in MusicBrainz relations, use the provided one (from Notion or input)
+                    if not spotify_album_url and spotify_url and 'spotify.com/album/' in spotify_url:
+                        spotify_album_url = spotify_url
+                        # #region agent log
+                        logger.info(f"[DEBUG H1] Using provided Spotify album URL - url={spotify_url}")
+                        # #endregion
+                    
+                    # Fetch Spotify album genres if we have a URL
+                    if spotify_album_url:
+                        spotify_id = spotify_album_url.split('/')[-1].split('?')[0]
+                        spotify_album = self.mb._get_spotify_album_by_id(spotify_id)
+                        # #region agent log
+                        logger.info(f"[DEBUG H2] Fetched Spotify album data - has_data={bool(spotify_album)}, has_genres={bool(spotify_album and spotify_album.get('genres'))}, genres={spotify_album.get('genres', []) if spotify_album else []}")
+                        # #endregion
+                        if spotify_album and spotify_album.get('genres'):
+                            genre_candidates.extend(spotify_album['genres'])
+                            logger.debug(f"Added {len(spotify_album['genres'])} genres from Spotify album")
                     
                     # Add Spotify artist genres
                     if release_data.get('artist-credit') and release_data['artist-credit']:
