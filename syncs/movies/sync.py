@@ -781,7 +781,7 @@ class NotionTMDbSync:
                 has_changes = True  # Always has changes on initial sync
             else:
                 # Subsequent sync - only compare changed properties
-                has_changes = self._compare_extended_properties(current_data, tmdb_data, content_type, new_properties, has_changes)
+                has_changes = self._compare_extended_properties(current_data, tmdb_data, content_type, new_properties, has_changes, update_only)
             
             return new_properties, has_changes
             
@@ -789,9 +789,45 @@ class NotionTMDbSync:
             logger.error(f"Error comparing properties: {e}")
             return {}, False
     
-    def _compare_extended_properties(self, current_data: Dict, tmdb_data: Dict, content_type: str, new_properties: Dict, has_changes: bool) -> bool:
+    def _compare_extended_properties(self, current_data: Dict, tmdb_data: Dict, content_type: str, new_properties: Dict, has_changes: bool, update_only: Optional[List[str]] = None) -> bool:
         """Compare extended properties and add changes to new_properties."""
         try:
+            # Map friendly names to property IDs (same as in compare_and_format_properties)
+            property_name_map = {
+                'rating': 'rating_property_id',
+                'watch_providers': 'watch_providers_property_id',
+                'seasons': 'seasons_property_id',
+                'total_episodes': 'episodes_property_id',
+                'latest_episode': 'released_episodes_property_id',
+                'next_episode': 'next_episode_property_id',
+                'genres': 'genres_property_id',
+                'cast': 'cast_property_id',
+                'director': 'director_property_id',
+                'creator': 'creator_property_id',
+                'production_companies': 'production_companies_property_id',
+                'description': 'description_property_id',
+                'release_date': 'release_date_property_id',
+                'runtime': 'runtime_minutes_property_id',
+                'tagline': 'tagline_property_id',
+                'original_language': 'original_language_property_id',
+                'production_countries': 'production_countries_property_id',
+                'collection': 'collection_property_id',
+            }
+            
+            # If update_only specified, convert to property ID set
+            allowed_properties = None
+            if update_only:
+                allowed_properties = set()
+                for name in update_only:
+                    prop_id_key = property_name_map.get(name, f"{name}_property_id")
+                    allowed_properties.add(prop_id_key)
+            
+            # Helper function to check if property should be updated
+            def should_update_property(property_id_key: str) -> bool:
+                if allowed_properties is None:
+                    return True  # Update all if no filter specified
+                return property_id_key in allowed_properties
+            
             # Episodes (TV shows) - Total planned episodes (including future seasons)
             if should_update_property('episodes_property_id') and content_type == 'tv' and tmdb_data.get('number_of_episodes') and self.property_mapping['episodes_property_id']:
                 current_episodes = current_data.get('episodes_property_id')
