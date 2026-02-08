@@ -329,7 +329,7 @@ class MusicBrainzAPI:
             
             url = f"{self.base_url}/release-group/{mbid}"
             params = {
-                'inc': 'releases+tags+ratings',
+                'inc': 'releases+tags+ratings+genres',
                 'fmt': 'json'
             }
             
@@ -3014,6 +3014,21 @@ class NotionMusicBrainzSync:
             
             # Genres/Tags combination for albums
             release_group = release_data.get('release-group') or {}
+            
+            # Fetch full release-group data with genres if we have a release-group ID
+            # The nested release-group in release data doesn't include genres
+            if release_group.get('id'):
+                full_release_group = self.mb.get_release_group(release_group['id'])
+                if full_release_group:
+                    # #region agent log
+                    logger.info(f"[DEBUG H6] Fetched full release-group - has_genres={bool(full_release_group.get('genres'))}, genres={[g.get('name') for g in full_release_group.get('genres', [])][:10]}")
+                    # #endregion
+                    release_group = full_release_group
+                else:
+                    # #region agent log
+                    logger.info(f"[DEBUG H6] Failed to fetch full release-group data")
+                    # #endregion
+            
             if self.albums_properties.get('genres'):
                 prop_key = self._get_property_key(self.albums_properties['genres'], 'albums')
                 # #region agent log
