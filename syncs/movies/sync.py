@@ -1291,40 +1291,18 @@ class NotionTMDbSync:
             # Compare current data with TMDb data and get only changed properties
             new_properties, has_changes = self.compare_and_format_properties(current_data, details, content_type)
             
-            # #region agent log
-            logger.info(f"[DEBUG] TMDb details for {title}: ID={details.get('id')}, has_backdrop={bool(details.get('backdrop_path'))}, backdrop_path={details.get('backdrop_path')}")
-            # #endregion
-            
             # Check if cover needs updating (only if no cover exists)
             new_cover_url = None
             current_cover_url = current_data.get('_cover_url')
-            
-            # #region agent log
-            logger.info(f"[DEBUG] Current cover status for {title}: current_cover_url={current_cover_url}, has_existing_cover={bool(current_cover_url)}")
-            # #endregion
             
             # Only set cover if there's no existing cover
             if details.get('backdrop_path') and not current_cover_url:
                 new_cover_url = f"https://image.tmdb.org/t/p/original{details['backdrop_path']}"
                 logger.info(f"Setting cover image for {title} (no existing cover)")
-                # #region agent log
-                logger.info(f"[DEBUG] Cover WILL be set: {new_cover_url}")
-                # #endregion
             elif current_cover_url:
                 logger.info(f"Skipping cover update for {title} (cover already exists)")
-                # #region agent log
-                logger.info(f"[DEBUG] Cover skipped - cover already exists: {current_cover_url}")
-                # #endregion
-            else:
-                # #region agent log
-                logger.info(f"[DEBUG] Cover skipped - no backdrop_path in TMDb data")
-                # #endregion
             
             cover_changed = new_cover_url is not None
-            
-            # #region agent log
-            logger.info(f"[DEBUG] Update decision for {title}: has_changes={has_changes}, cover_changed={cover_changed}, force_icons={force_icons}, will_update={has_changes or cover_changed or force_icons}")
-            # #endregion
             
             # Only update if there are changes (or if forcing icon updates)
             if not has_changes and not cover_changed and not force_icons:
