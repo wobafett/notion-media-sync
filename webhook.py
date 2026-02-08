@@ -10,21 +10,21 @@ from dotenv import load_dotenv
 import router
 from shared.logging_config import get_logger, setup_logging
 from shared.notion_api import NotionAPI
-from shared.utils import get_notion_token, extract_page_id_from_url
+from shared.utils import get_notion_token, extract_page_id_from_url, detect_url_type
 
 logger = get_logger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Route a single Notion page to the correct sync target")
-    parser.add_argument("--page-id", required=False, help="Notion page ID or URL to sync (optional if --spotify-url or --google-books-url is provided)")
+    parser.add_argument("--page-id", required=False, help="Notion page ID or URL to sync (optional if --url is provided)")
+    parser.add_argument("--url", type=str, help="External URL to create new page from (Spotify or Google Books) - auto-detects type")
     parser.add_argument("--force-icons", action="store_true", help="Force update page icons if supported")
     parser.add_argument("--force-update", action="store_true", help="Force update even if already synced")
-    parser.add_argument("--force-research", action="store_true", help="Books target: re-search even when IDs exist")
-    parser.add_argument("--force-scraping", action="store_true", help="Books target: force ComicVine scraping")
+    parser.add_argument("--comicvine-scrape", action="store_true", help="Books target: force ComicVine scraping")
     parser.add_argument("--dry-run", action="store_true", help="Books target: simulate sync without writing to Notion")
-    parser.add_argument("--spotify-url", type=str, help="Music target: Spotify URL to create new page (track, album, or artist)")
-    parser.add_argument("--google-books-url", type=str, help="Books target: Google Books URL to create new page")
+    parser.add_argument("--spotify-url", type=str, help="(Deprecated: use --url) Music target: Spotify URL to create new page")
+    parser.add_argument("--google-books-url", type=str, help="(Deprecated: use --url) Books target: Google Books URL to create new page")
     return parser
 
 
@@ -36,9 +36,24 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
 
-    # Validation: require either page_id, spotify_url, or google_books_url
+    # Handle --url parameter by detecting type and routing to appropriate parameter
+    if args.url:
+        url_type = detect_url_type(args.url)
+        if not url_type:
+            logger.error("Unsupported URL type: %s. Must be Spotify or Google Books URL", args.url)
+            sys.exit(1)
+        
+        # Map to appropriate parameter for backward compatibility
+        if url_type == 'spotify':
+            args.spotify_url = args.url
+            logger.info("Detected Spotify URL: %s", args.url)
+        elif url_type == 'google_books':
+            args.google_books_url = args.url
+            logger.info("Detected Google Books URL: %s", args.url)
+
+    # Validation: require either page_id, spotify_url, google_books_url, or url
     if not args.page_id and not args.spotify_url and not args.google_books_url:
-        logger.error("Either --page-id, --spotify-url, or --google-books-url must be provided")
+        logger.error("Either --page-id or --url must be provided")
         sys.exit(1)
 
     notion_token = get_notion_token()
@@ -130,8 +145,7 @@ def main():
         "page_id": page_id,
         "force_icons": args.force_icons,
         "force_update": args.force_update,
-        "force_research": args.force_research,
-        "force_scraping": args.force_scraping,
+        "comicvine_scrape": args.comicvine_scrape,
         "dry_run": args.dry_run,
         "spotify_url": args.spotify_url,
         "google_books_url": args.google_books_url,

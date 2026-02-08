@@ -36,7 +36,7 @@ Add these secrets to your GitHub repository (`Settings > Secrets and variables >
 ### ⚙️ Workflow Overview
 
 - **File**: `.github/workflows/notion-sync.yml`
-- **Dispatch inputs**: `target`, `page_id` (single-page webhook mode), `workers`, `database`, `created_after`, and booleans for `force_icons`, `force_update`, `force_research`, `force_scraping`, `dry_run`
+- **Dispatch inputs**: `target`, `page_id` (single-page webhook mode), `workers`, `database`, `created_after`, and booleans for `force_icons`, `force_update`, `force_research`, `comicvine_scrape`, `dry_run`
 - **Schedule**: No active cron by default; a commented placeholder (`0 0 * * *`) lives inside the workflow so you can uncomment / duplicate when you’re ready for timed runs.
 - **Modes**:
   - If `page_id` is provided, the job calls `python3 webhook.py` to auto-route the page’s database.

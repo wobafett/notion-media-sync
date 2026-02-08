@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 import router
 from shared.logging_config import get_logger, setup_logging
+from shared.utils import parse_created_after_date
 
 
 def build_parser(targets) -> argparse.ArgumentParser:
@@ -50,7 +51,7 @@ def build_parser(targets) -> argparse.ArgumentParser:
     parser.add_argument(
         "--created-after",
         type=str,
-        help="Filter pages created on/after YYYY-MM-DD (music only; accepts 'today')",
+        help="Filter pages created on/after YYYY-MM-DD (all targets; accepts 'today')",
     )
     parser.add_argument(
         "--force-update",
@@ -58,12 +59,7 @@ def build_parser(targets) -> argparse.ArgumentParser:
         help="Force update even if content is already synced",
     )
     parser.add_argument(
-        "--force-research",
-        action="store_true",
-        help="Books target: re-search even when IDs exist",
-    )
-    parser.add_argument(
-        "--force-scraping",
+        "--comicvine-scrape",
         action="store_true",
         help="Books target: force ComicVine scraping even when IDs exist",
     )
@@ -133,6 +129,15 @@ def main(default_target: Optional[str] = None):
         sys.exit(1)
 
     try:
+        # Parse created_after date at entry point for all targets
+        normalized_created_after = None
+        if args.created_after:
+            try:
+                normalized_created_after = parse_created_after_date(args.created_after)
+            except ValueError as e:
+                logger.error(str(e))
+                sys.exit(1)
+        
         run_options = {
             "force_icons": args.force_icons,
             "force_update": args.force_update,
@@ -142,14 +147,12 @@ def main(default_target: Optional[str] = None):
         }
         if args.database:
             run_options["database"] = args.database
-        if args.created_after:
-            run_options["created_after"] = args.created_after
+        if normalized_created_after:
+            run_options["created_after"] = normalized_created_after
         if getattr(args, "force_update", False):
             run_options["force_update"] = True
-        if getattr(args, "force_research", False):
-            run_options["force_research"] = True
-        if getattr(args, "force_scraping", False):
-            run_options["force_scraping"] = True
+        if getattr(args, "comicvine_scrape", False):
+            run_options["comicvine_scrape"] = True
         if getattr(args, "dry_run", False):
             run_options["dry_run"] = True
         if getattr(args, "spotify_url", None):

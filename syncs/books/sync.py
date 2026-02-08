@@ -18,6 +18,7 @@ from .hybrid_api import JikanAPI, ComicVineAPI, HybridBookAPI, StarWarsFandomAPI
 from shared.logging_config import get_logger, setup_logging
 from shared.notion_api import NotionAPI
 from shared.utils import (
+    build_created_after_filter,
     build_multi_select_options,
     find_page_by_property,
     get_database_id,
@@ -387,13 +388,13 @@ class GoogleBooksAPI:
 class NotionGoogleBooksSync:
     """Main class for synchronizing Notion database with Google Books data."""
     
-    def __init__(self, notion_token: str, google_books_api_key: Optional[str], database_id: str, comicvine_api_key: Optional[str] = None, force_scraping: bool = False):
+    def __init__(self, notion_token: str, google_books_api_key: Optional[str], database_id: str, comicvine_api_key: Optional[str] = None, comicvine_scrape: bool = False):
         self.notion = NotionAPI(notion_token)
         
         # Initialize APIs
         google_books_api = GoogleBooksAPI(google_books_api_key)
         jikan_api = JikanAPI()
-        comicvine_api = ComicVineAPI(comicvine_api_key, force_scraping=force_scraping) if comicvine_api_key else None
+        comicvine_api = ComicVineAPI(comicvine_api_key, comicvine_scrape=comicvine_scrape) if comicvine_api_key else None
         star_wars_fandom_api = StarWarsFandomAPI()
         
         # Use hybrid API
@@ -514,10 +515,13 @@ class NotionGoogleBooksSync:
             logger.error(f"Error loading database schema: {e}")
             self.property_mapping = {}
     
-    def get_notion_pages(self) -> List[Dict]:
-        """Get all pages from the Notion database."""
+    def get_notion_pages(self, created_after: Optional[str] = None) -> List[Dict]:
+        """Get all pages from the Notion database, optionally filtered by creation date."""
+        filter_params = build_created_after_filter(created_after)
+        if filter_params:
+            logger.info(f"Filtering pages created on/after {created_after}")
         logger.info(f"Fetching pages from database {self.database_id}")
-        return self.notion.query_database(self.database_id)
+        return self.notion.query_database(self.database_id, filter_params)
     
     def get_last_edited_page(self) -> Optional[Dict]:
         """Get the most recently edited page from the Notion database."""
@@ -549,7 +553,7 @@ class NotionGoogleBooksSync:
             logger.error(f"Error fetching last edited page: {e}")
             return None
     
-    def sync_last_page(self, force_icons: bool = False, force_update: bool = False, force_research: bool = False, dry_run: bool = False) -> Dict:
+    def sync_last_page(self, force_icons: bool = False, force_update: bool = False, dry_run: bool = False) -> Dict:
         """Sync only the most recently edited page."""
         logger.info("Starting sync for last edited page only")
         
@@ -571,7 +575,7 @@ class NotionGoogleBooksSync:
         
         # Sync the single page
         try:
-            result = self.sync_page(page, force_icons, force_update, force_research, dry_run)
+            result = self.sync_page(page, force_icons, force_update, dry_run)
             
             end_time = time.time()
             duration = end_time - start_time
@@ -1037,7 +1041,7 @@ class NotionGoogleBooksSync:
         
         return properties
     
-    def sync_page(self, page: Dict, force_icons: bool = False, force_update: bool = False, force_research: bool = False, dry_run: bool = False) -> Optional[bool]:
+    def sync_page(self, page: Dict, force_icons: bool = False, force_update: bool = False, dry_run: bool = False) -> Optional[bool]:
         """Sync a single page with Google Books data."""
         try:
             page_id = page['id']
@@ -1099,8 +1103,8 @@ class NotionGoogleBooksSync:
                     content_type_preference = "book"
                 logger.info(f"Using Type property '{existing_type}' to set content type preference: {content_type_preference}")
             
-            # Use existing IDs for direct API calls if available and not forcing research
-            if (existing_google_books_id or existing_jikan_id or existing_comicvine_id or existing_wookieepedia_id) and not force_research:
+            # Use existing IDs for direct API calls if available
+            if (existing_google_books_id or existing_jikan_id or existing_comicvine_id or existing_wookieepedia_id):
                 # Priority order: Jikan (manga) > ComicVine (comics) > Google Books (general books)
                 # This ensures we use the most specific API for the content type
                 
@@ -1130,7 +1134,7 @@ class NotionGoogleBooksSync:
                             volume_details = self.google_books.comicvine.get_volume_details(int(existing_comicvine_id))
                             if volume_details:
                                 # Check if we should force scraping even with existing ID
-                                if self.google_books.comicvine.force_scraping:
+                                if self.google_books.comicvine.comicvine_scrape:
                                     # Force scraping to refresh creator/theme data
                                     themes = self.google_books.comicvine.scrape_volume_themes(int(existing_comicvine_id))
                                     if themes:
@@ -1203,9 +1207,6 @@ class NotionGoogleBooksSync:
                     else:
                         book_data = self.google_books.search_books(title)
             else:
-                if force_research and (existing_google_books_id or existing_jikan_id or existing_comicvine_id or existing_wookieepedia_id):
-                    logger.info(f"Force research enabled - searching for '{title}' instead of using existing IDs")
-                
                 # Use hybrid API for all searches to properly detect manga/comics
                 # Set content type preference based on existing Type property
                 if content_type_preference:
@@ -1990,7 +1991,7 @@ class NotionGoogleBooksSync:
             'created': True
         }
     
-    def run_sync(self, force_icons: bool = False, force_update: bool = False, max_workers: int = 3, force_research: bool = False, dry_run: bool = False, google_books_url: Optional[str] = None) -> Dict:
+    def run_sync(self, force_icons: bool = False, force_update: bool = False, max_workers: int = 3, dry_run: bool = False, google_books_url: Optional[str] = None, created_after: Optional[str] = None) -> Dict:
         """Run the complete synchronization process."""
         # Google Books URL creation mode takes precedence
         if google_books_url:
@@ -2005,7 +2006,7 @@ class NotionGoogleBooksSync:
             return {'success': False, 'message': 'No title property found'}
         
         start_time = time.time()
-        pages = self.get_notion_pages()
+        pages = self.get_notion_pages(created_after=created_after)
         
         if not pages:
             logger.warning("No pages found in database")
@@ -2021,7 +2022,7 @@ class NotionGoogleBooksSync:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all tasks
             future_to_page = {
-                executor.submit(self.sync_page, page, force_icons, force_update, force_research, dry_run): page 
+                executor.submit(self.sync_page, page, force_icons, force_update, dry_run): page 
                 for page in pages
             }
             
@@ -2070,7 +2071,6 @@ class NotionGoogleBooksSync:
         *,
         force_icons: bool = False,
         force_update: bool = False,
-        force_research: bool = False,
         dry_run: bool = False,
     ) -> Dict:
         """Run synchronization for a single explicit page."""
@@ -2102,7 +2102,7 @@ class NotionGoogleBooksSync:
                 }
 
         start_time = time.time()
-        result = self.sync_page(page, force_icons, force_update, force_research, dry_run)
+        result = self.sync_page(page, force_icons, force_update, dry_run)
         duration = time.time() - start_time
 
         if result is True:
@@ -2164,7 +2164,7 @@ def validate_environment():
     return True
 
 
-def _build_sync_instance(force_scraping: bool = False) -> NotionGoogleBooksSync:
+def _build_sync_instance(comicvine_scrape: bool = False) -> NotionGoogleBooksSync:
     notion_token = get_notion_token()
     database_id = get_database_id('NOTION_BOOKS_DATABASE_ID', 'NOTION_DATABASE_ID')
     google_books_api_key = os.getenv('GOOGLE_BOOKS_API_KEY')
@@ -2174,7 +2174,7 @@ def _build_sync_instance(force_scraping: bool = False) -> NotionGoogleBooksSync:
         google_books_api_key,
         database_id,
         comicvine_api_key,
-        force_scraping=force_scraping,
+        comicvine_scrape=comicvine_scrape,
     )
 
 
@@ -2193,30 +2193,32 @@ def run_sync(
     workers: int = 3,
     last_page: bool = False,
     page_id: Optional[str] = None,
-    force_research: bool = False,
-    force_scraping: bool = False,
+    comicvine_scrape: bool = False,
     dry_run: bool = False,
     google_books_url: Optional[str] = None,
+    created_after: Optional[str] = None,
 ) -> Dict:
     """Run the Books sync with the provided options."""
     # Google Books URL creation mode takes precedence
     if google_books_url and not page_id:
-        sync = _build_sync_instance(force_scraping=force_scraping)
+        sync = _build_sync_instance(comicvine_scrape=comicvine_scrape)
         return sync.create_from_google_books_url(google_books_url)
     
     enforce_worker_limits(workers)
 
     if page_id and last_page:
         raise RuntimeError("page-id mode cannot be combined with last-page mode")
+    
+    if page_id and created_after:
+        logger.warning("--created-after is ignored when --page-id is provided")
 
-    sync = _build_sync_instance(force_scraping=force_scraping)
+    sync = _build_sync_instance(comicvine_scrape=comicvine_scrape)
 
     if page_id:
         return sync.run_page_sync(
             page_id,
             force_icons=force_icons,
             force_update=force_update,
-            force_research=force_research,
             dry_run=dry_run,
         )
 
@@ -2224,7 +2226,6 @@ def run_sync(
         return sync.sync_last_page(
             force_icons=force_icons,
             force_update=force_update,
-            force_research=force_research,
             dry_run=dry_run,
         )
 
@@ -2232,8 +2233,8 @@ def run_sync(
         force_icons=force_icons,
         force_update=force_update,
         max_workers=workers,
-        force_research=force_research,
         dry_run=dry_run,
+        created_after=created_after,
     )
 
 

@@ -17,6 +17,7 @@ from shared.change_detection import has_property_changes
 from shared.logging_config import get_logger, setup_logging
 from shared.notion_api import NotionAPI
 from shared.utils import (
+    build_created_after_filter,
     build_multi_select_options,
     get_database_id,
     get_notion_token,
@@ -1056,10 +1057,13 @@ class NotionIGDbSync:
             logger.error(f"Error loading database schema: {e}")
             self.property_mapping = {}
     
-    def get_notion_pages(self) -> List[Dict]:
-        """Get all pages from the Notion database."""
+    def get_notion_pages(self, created_after: Optional[str] = None) -> List[Dict]:
+        """Get all pages from the Notion database, optionally filtered by creation date."""
+        filter_params = build_created_after_filter(created_after)
+        if filter_params:
+            logger.info(f"Filtering pages created on/after {created_after}")
         logger.info(f"Fetching pages from database {self.database_id}")
-        return self.notion.query_database(self.database_id)
+        return self.notion.query_database(self.database_id, filter_params)
     
     def extract_title(self, page: Dict) -> Optional[str]:
         """Extract title from a Notion page."""
@@ -1658,7 +1662,7 @@ class NotionIGDbSync:
         logger.info(f"Finished page-specific sync for page {page_id}")
         return results
     
-    def run_sync(self, force_icons: bool = False, force_update: bool = False, max_workers: int = 3, last_page: bool = False, page_id: Optional[str] = None) -> Dict:
+    def run_sync(self, force_icons: bool = False, force_update: bool = False, max_workers: int = 3, last_page: bool = False, page_id: Optional[str] = None, created_after: Optional[str] = None) -> Dict:
         """Run the complete synchronization process."""
         # Handle page-specific sync
         if page_id:
@@ -1668,6 +1672,8 @@ class NotionIGDbSync:
                     'success': False,
                     'message': 'page-id mode cannot be combined with last-page mode'
                 }
+            if created_after:
+                logger.warning("--created-after is ignored when --page-id is provided")
             return self._run_page_specific_sync(page_id, force_update)
         
         logger.info("Starting Notion-IGDb synchronization")
@@ -1679,7 +1685,7 @@ class NotionIGDbSync:
             return {'success': False, 'message': 'No title property found'}
         
         start_time = time.time()
-        pages = self.get_notion_pages()
+        pages = self.get_notion_pages(created_after=created_after)
         
         if not pages:
             logger.warning("No pages found in database")
@@ -1807,6 +1813,7 @@ def run_sync(
     workers: int = 3,
     last_page: bool = False,
     page_id: Optional[str] = None,
+    created_after: Optional[str] = None,
 ) -> Dict:
     """Run the Games sync with the provided options."""
     enforce_worker_limits(workers)
@@ -1821,6 +1828,7 @@ def run_sync(
         max_workers=workers,
         last_page=last_page,
         page_id=page_id,
+        created_after=created_after,
     )
 
 

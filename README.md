@@ -74,7 +74,7 @@ This repository now hosts the combined sync logic for **Games**, **Music**, **Mo
 The repo includes `.github/workflows/notion-sync.yml`, which exposes a manual `workflow_dispatch` form:
 
 - Required input: `target` (games/music/movies/books)
-- Optional inputs: `page_id` (single page mode via webhook), `workers`, `database`, `created_after`, and the standard flags `force_icons`, `force_update`, `force_research`, `force_scraping`, `dry_run`
+- Optional inputs: `page_id` (single page mode via webhook), `workers`, `database`, `created_after`, and the standard flags `force_icons`, `force_update`, `force_research`, `comicvine_scrape`, `dry_run`
 - Secrets: set `NOTION_INTERNAL_INTEGRATION_SECRET`, the relevant `NOTION_*_DATABASE_ID` values, and API keys (IGDB, TMDb, MusicBrainz, Google Books, ComicVine, etc.) in the repository settings
 - A placeholder cron entry is commented out inside the workflow—uncomment or duplicate it when you’re ready for scheduled runs.
 

@@ -1,5 +1,6 @@
 import logging
 import os
+from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Optional, Set
 
 logger = logging.getLogger(__name__)
@@ -172,5 +173,93 @@ def find_page_by_property(
         logger.debug(f"Error searching for page by {property_type}: {e}")
     
     return None
+
+
+def detect_url_type(url: str) -> Optional[str]:
+    """
+    Detect URL type and return 'spotify' or 'google_books'.
+    
+    Args:
+        url: URL to analyze
+    
+    Returns:
+        'spotify' for Spotify URLs (track/album/artist)
+        'google_books' for Google Books edition URLs
+        None if URL is not recognized
+    
+    Example:
+        >>> detect_url_type('https://open.spotify.com/track/abc123')
+        'spotify'
+        >>> detect_url_type('https://www.google.com/books/edition/Title/abc123')
+        'google_books'
+    """
+    if not url:
+        return None
+    
+    url = url.strip()
+    
+    if 'spotify.com/' in url and any(x in url for x in ['/track/', '/album/', '/artist/']):
+        return 'spotify'
+    elif 'google.com/books/edition/' in url:
+        return 'google_books'
+    
+    return None
+
+
+def parse_created_after_date(created_after: Optional[str]) -> Optional[str]:
+    """
+    Parse created_after input into ISO timestamp format for Notion API.
+    
+    Args:
+        created_after: 'today' or 'YYYY-MM-DD' format
+    
+    Returns:
+        ISO timestamp string (e.g., '2025-01-15T00:00:00Z') or None
+    
+    Raises:
+        ValueError: If date format is invalid
+    
+    Example:
+        >>> parse_created_after_date('today')
+        '2026-02-08T00:00:00Z'
+        >>> parse_created_after_date('2025-12-25')
+        '2025-12-25T00:00:00Z'
+    """
+    if not created_after:
+        return None
+    
+    input_str = created_after.strip()
+    if input_str.lower() == 'today':
+        today = datetime.now(timezone.utc).date()
+        return f"{today.isoformat()}T00:00:00Z"
+    else:
+        try:
+            parsed_date = datetime.strptime(input_str, '%Y-%m-%d').date()
+            return f"{parsed_date.isoformat()}T00:00:00Z"
+        except ValueError:
+            raise ValueError("created_after must be in YYYY-MM-DD format or 'today'")
+
+
+def build_created_after_filter(created_after: Optional[str]) -> Optional[Dict]:
+    """
+    Build Notion API filter params for created_after timestamp.
+    
+    Args:
+        created_after: ISO timestamp from parse_created_after_date()
+    
+    Returns:
+        Filter dict for notion.query_database() or None
+    
+    Example:
+        >>> build_created_after_filter('2025-12-25T00:00:00Z')
+        {'timestamp': 'created_time', 'created_time': {'on_or_after': '2025-12-25T00:00:00Z'}}
+    """
+    if not created_after:
+        return None
+    
+    return {
+        'timestamp': 'created_time',
+        'created_time': {'on_or_after': created_after}
+    }
 
 

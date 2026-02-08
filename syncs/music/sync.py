@@ -17,7 +17,7 @@ import requests
 from shared.change_detection import has_property_changes
 from shared.logging_config import get_logger
 from shared.notion_api import NotionAPI
-from shared.utils import build_multi_select_options, get_notion_token, normalize_id
+from shared.utils import build_multi_select_options, build_created_after_filter, get_notion_token, normalize_id
 
 logger = get_logger(__name__)
 
@@ -5723,13 +5723,9 @@ class NotionMusicBrainzSync:
                 self._load_locations_cache()
             
             db_id = getattr(self, f'{db_name}_db_id')
-            filter_params = None
-            if created_after:
+            filter_params = build_created_after_filter(created_after)
+            if filter_params:
                 logger.info(f"Filtering {db_name} pages created on/after {created_after}")
-                filter_params = {
-                    'timestamp': 'created_time',
-                    'created_time': {'on_or_after': created_after}
-                }
             pages = self.notion.query_database(db_id, filter_params)
             
             if not pages:
@@ -5862,23 +5858,12 @@ def run_sync(
     if last_page and database == 'all':
         raise RuntimeError("--last-page requires a specific database when page-id is absent")
 
-    normalized_created_after = None
-    if created_after:
-        input_str = created_after.strip()
-        if input_str.lower() == 'today':
-            today = datetime.now(timezone.utc).date()
-            normalized_created_after = f"{today.isoformat()}T00:00:00Z"
-        else:
-            try:
-                parsed_date = datetime.strptime(input_str, '%Y-%m-%d').date()
-                normalized_created_after = f"{parsed_date.isoformat()}T00:00:00Z"
-            except ValueError:
-                raise ValueError("--created-after must be in YYYY-MM-DD format or 'today'")
+    # created_after is already normalized by main.py's parse_created_after_date()
     return _build_sync_instance().run_sync(
         database=database,
         force_update=force_update,
         last_page=last_page,
-        created_after=normalized_created_after,
+        created_after=created_after,
         page_id=page_id,
         spotify_url=spotify_url
     )

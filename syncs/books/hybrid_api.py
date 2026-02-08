@@ -173,10 +173,10 @@ class JikanAPI(BaseAPI):
 class ComicVineAPI(BaseAPI):
     """ComicVine API client for comics data."""
     
-    def __init__(self, api_key: str, force_scraping: bool = False):
+    def __init__(self, api_key: str, comicvine_scrape: bool = False):
         super().__init__(request_delay=3.0)
         self.api_key = api_key
-        self.force_scraping = force_scraping
+        self.comicvine_scrape = comicvine_scrape
         self.base_url = "https://comicvine.gamespot.com/api"
         self.session = requests.Session()
         self.session.headers.update({
@@ -226,7 +226,7 @@ class ComicVineAPI(BaseAPI):
                         if detailed_volume:
                             # Always scrape when doing hybrid search (ComicVine ID is empty)
                             # This ensures we get complete data for new entries
-                            # Note: force_scraping flag doesn't apply here since this is already automatic scraping
+                            # Note: comicvine_scrape flag doesn't apply here since this is already automatic scraping
                             themes = self.scrape_volume_themes(volume_id)
                             if themes:
                                 detailed_volume['scraped_themes'] = themes

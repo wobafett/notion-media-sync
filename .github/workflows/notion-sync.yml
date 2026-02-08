@@ -34,7 +34,7 @@ on:
         required: false
         default: false
         type: boolean
-      force_scraping:
+      comicvine_scrape:
         description: Books – force ComicVine scraping
         required: false
         default: false
@@ -109,7 +109,7 @@ jobs:
           args=()
           if [ "${{ inputs.force_update }}" = 'true' ]; then args+=('--force-update'); fi
           if [ "${{ inputs.force_research }}" = 'true' ]; then args+=('--force-research'); fi
-          if [ "${{ inputs.force_scraping }}" = 'true' ]; then args+=('--force-scraping'); fi
+          if [ "${{ inputs.comicvine_scrape }}" = 'true' ]; then args+=('--comicvine-scrape'); fi
           if [ "${{ inputs.dry_run }}" = 'true' ]; then args+=('--dry-run'); fi
           if [ -n "${{ inputs.spotify_url }}" ]; then args+=('--spotify-url' "${{ inputs.spotify_url }}"); fi
           if [ -n "${{ inputs.google_books_url }}" ]; then args+=('--google-books-url' "${{ inputs.google_books_url }}"); fi

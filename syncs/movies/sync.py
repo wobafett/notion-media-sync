@@ -17,7 +17,7 @@ import requests
 from notion_client import Client
 
 from shared.logging_config import get_logger, setup_logging
-from shared.utils import build_multi_select_options, get_database_id, get_notion_token, normalize_id
+from shared.utils import build_multi_select_options, build_created_after_filter, get_database_id, get_notion_token, normalize_id
 
 setup_logging('notion_tmdb_sync.log')
 logger = get_logger(__name__)
@@ -383,9 +383,10 @@ class NotionTMDbSync:
             logger.error(f"Error loading database schema: {e}")
             self.property_mapping = {}
     
-    def get_notion_pages(self, status_filter: Optional[str] = None) -> List[Dict]:
-        """Get all pages from the Notion database, optionally filtered by status."""
+    def get_notion_pages(self, status_filter: Optional[str] = None, created_after: Optional[str] = None) -> List[Dict]:
+        """Get all pages from the Notion database, optionally filtered by status and/or creation date."""
         filter_params = None
+        filters_to_combine = []
         
         if status_filter:
             # Build Notion filter for status property
@@ -395,20 +396,32 @@ class NotionTMDbSync:
                 statuses = [s.strip() for s in status_filter.split(',')]
                 
                 if len(statuses) == 1:
-                    filter_params = {
+                    filters_to_combine.append({
                         "property": status_property_id,
                         "status": {"equals": statuses[0]}
-                    }
+                    })
                     logger.info(f"Filtering pages by status: {statuses[0]}")
                 else:
                     # OR filter for multiple statuses
-                    filter_params = {
+                    filters_to_combine.append({
                         "or": [
                             {"property": status_property_id, "status": {"equals": s}}
                             for s in statuses
                         ]
-                    }
+                    })
                     logger.info(f"Filtering pages by statuses: {', '.join(statuses)}")
+        
+        if created_after:
+            created_filter = build_created_after_filter(created_after)
+            if created_filter:
+                filters_to_combine.append(created_filter)
+                logger.info(f"Filtering pages created on/after {created_after}")
+        
+        # Combine filters with AND logic if multiple
+        if len(filters_to_combine) == 1:
+            filter_params = filters_to_combine[0]
+        elif len(filters_to_combine) > 1:
+            filter_params = {"and": filters_to_combine}
         
         logger.info(f"Fetching pages from database {self.database_id}")
         return self.notion.query_database(self.database_id, filter_params)
@@ -1667,6 +1680,7 @@ class NotionTMDbSync:
         force_update: bool = False,
         status_filter: Optional[str] = None,
         update_only: Optional[List[str]] = None,
+        created_after: Optional[str] = None,
     ) -> Dict:
         """Run the complete synchronization process."""
         mode_parts = []
@@ -1678,6 +1692,8 @@ class NotionTMDbSync:
             mode_parts.append(f"STATUS={status_filter}")
         if update_only:
             mode_parts.append(f"UPDATE={','.join(update_only)}")
+        if created_after:
+            mode_parts.append(f"CREATED_AFTER={created_after[:10]}")
         
         mode_str = " + ".join(mode_parts) if mode_parts else "STANDARD"
         logger.info(f"Starting Notion-TMDb synchronization ({mode_str} MODE)")
@@ -1693,7 +1709,7 @@ class NotionTMDbSync:
             return {'success': False, 'message': 'No content type property found'}
         
         start_time = time.time()
-        pages = self.get_notion_pages(status_filter=status_filter)
+        pages = self.get_notion_pages(status_filter=status_filter, created_after=created_after)
         
         if not pages:
             logger.warning("No pages found in database")
@@ -1813,12 +1829,16 @@ def run_sync(
     force_update: bool = False,
     status_filter: Optional[str] = None,
     update_only: Optional[List[str]] = None,
+    created_after: Optional[str] = None,
 ) -> Dict:
     """Run the Movies/TV sync with the provided options."""
     enforce_worker_limits(workers)
 
     if page_id and last_page:
         raise RuntimeError("page-id mode cannot be combined with last-page mode")
+    
+    if page_id and created_after:
+        logger.warning("--created-after is ignored when --page-id is provided")
 
     sync = _build_sync_instance()
 
@@ -1841,6 +1861,7 @@ def run_sync(
         force_update=force_update,
         status_filter=status_filter,
         update_only=update_only,
+        created_after=created_after,
     )
 
 
