@@ -17,7 +17,6 @@ SEASONS_PROPERTY_ID = "Z~qp"  # e.g., "Yzab" - the actual property ID from Notio
 GENRES_PROPERTY_ID = "Qjhc"  # e.g., "Cdef" - the actual property ID from Notion
 STATUS_PROPERTY_ID = "F%3EH%60"  # e.g., "Ghij" - the actual property ID from Notion
 TMDB_ID_PROPERTY_ID = "KEtB"  # e.g., "Klmn" - the actual property ID from Notion
-COVER_IMAGE_PROPERTY_ID = None  # e.g., "Opqr" - the actual property ID from Notion (for cover/backdrop images)
 LAST_UPDATED_PROPERTY_ID = None  # e.g., "Stuv" - the actual property ID from Notion
 EPISODES_PROPERTY_ID = "%7DaY%5B"  # Number of episodes (TV shows)
 WEBSITE_PROPERTY_ID = None  # Official website URL
