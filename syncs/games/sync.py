@@ -21,6 +21,7 @@ from shared.utils import (
     build_multi_select_options,
     get_database_id,
     get_notion_token,
+    merge_multi_select_properties,
     normalize_id,
 )
 
@@ -1143,6 +1144,26 @@ class NotionIGDbSync:
             
             # Format properties for Notion
             properties = self.format_notion_properties(game_data)
+            
+            # Merge multi-select properties based on FIELD_BEHAVIOR config
+            property_mappings = {}
+            field_mapping = [
+                ('genres_property_id', 'genres_property_id'),
+                ('platforms_property_id', 'platforms_property_id'),
+                ('platform_family_property_id', 'platform_family_property_id'),
+                ('platform_type_property_id', 'platform_type_property_id'),
+                ('franchise_property_id', 'franchise_property_id'),
+                ('collections_property_id', 'collections_property_id'),
+                ('game_modes_property_id', 'game_modes_property_id'),
+                ('multiplayer_modes_property_id', 'multiplayer_modes_property_id'),
+                ('themes_property_id', 'themes_property_id'),
+            ]
+            for prop_id_key, config_key in field_mapping:
+                if self.property_mapping.get(prop_id_key):
+                    prop_key = self._get_property_key(self.property_mapping[prop_id_key])
+                    if prop_key:
+                        property_mappings[config_key] = prop_key
+            properties = merge_multi_select_properties(page, properties, self.field_behavior, property_mappings)
             
             page_properties = page.get('properties', {})
             has_changes, change_details = has_property_changes(

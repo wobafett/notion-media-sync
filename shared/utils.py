@@ -263,3 +263,83 @@ def build_created_after_filter(created_after: Optional[str]) -> Optional[Dict]:
     }
 
 
+def merge_multi_select_properties(
+    page: Dict,
+    new_properties: Dict,
+    field_behavior: Dict[str, str],
+    property_mappings: Dict[str, str],
+) -> Dict:
+    """
+    Merge multi-select properties based on FIELD_BEHAVIOR configuration.
+    
+    This function merges existing multi-select values with new ones when 
+    field_behavior is set to 'merge', preserving user-added values while
+    adding new ones from API sources.
+    
+    Args:
+        page: Existing Notion page data with properties
+        new_properties: New properties dict to be updated
+        field_behavior: FIELD_BEHAVIOR configuration dict (from property_config)
+        property_mappings: Maps field_behavior keys to property keys in new_properties
+                          Example: {'genres_property_id': 'Qjhc'} where 'Qjhc' is 
+                          the actual property key in the properties dict
+    
+    Returns:
+        Updated properties dict with merged multi-select values
+    
+    Example:
+        >>> # Existing page has genres: ["Rock", "Alternative"]
+        >>> # New properties would set genres to: ["Indie", "Rock"]
+        >>> merged = merge_multi_select_properties(
+        ...     page=existing_page,
+        ...     new_properties={'Qjhc': {'multi_select': [{'name': 'Indie'}, {'name': 'Rock'}]}},
+        ...     field_behavior={'genres_property_id': 'merge'},
+        ...     property_mappings={'genres_property_id': 'Qjhc'}
+        ... )
+        >>> # Result: genres will be ["Alternative", "Indie", "Rock"] (merged + sorted)
+    """
+    try:
+        existing_properties = page.get('properties', {})
+        merged_properties = new_properties.copy()
+        
+        # Process each property that has a mapping
+        for config_key, prop_key in property_mappings.items():
+            # Check if this property should use merge behavior
+            behavior = field_behavior.get(config_key, 'default')
+            if behavior != 'merge':
+                continue
+            
+            # Skip if property not in new_properties (nothing to merge)
+            if prop_key not in new_properties:
+                continue
+            
+            # Get existing multi-select values
+            existing_prop = existing_properties.get(prop_key, {})
+            existing_values = existing_prop.get('multi_select', [])
+            existing_names = {val.get('name') for val in existing_values if val.get('name')}
+            
+            # Get new multi-select values
+            new_prop = new_properties.get(prop_key, {})
+            new_values = new_prop.get('multi_select', [])
+            new_names = {val.get('name') for val in new_values if val.get('name')}
+            
+            # Merge: combine existing and new, avoiding duplicates, and sort
+            merged_names = existing_names | new_names
+            merged_values = [{'name': name} for name in sorted(merged_names)]
+            
+            # Update with merged values
+            merged_properties[prop_key] = {'multi_select': merged_values}
+            
+            logger.info(
+                f"Merged {config_key}: {len(existing_values)} existing + "
+                f"{len(new_values)} new = {len(merged_values)} total"
+            )
+        
+        return merged_properties
+        
+    except Exception as e:
+        logger.warning(f"Error merging multi-select properties: {e}")
+        # Return new properties if merge fails
+        return new_properties
+
+

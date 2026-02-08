@@ -17,7 +17,13 @@ import requests
 from shared.change_detection import has_property_changes
 from shared.logging_config import get_logger
 from shared.notion_api import NotionAPI
-from shared.utils import build_multi_select_options, build_created_after_filter, get_notion_token, normalize_id
+from shared.utils import (
+    build_multi_select_options,
+    build_created_after_filter,
+    get_notion_token,
+    normalize_id,
+    merge_multi_select_properties,
+)
 
 logger = get_logger(__name__)
 
@@ -1638,7 +1644,16 @@ class NotionMusicBrainzSync:
             notion_props = self._merge_relations(page, notion_props, 'artists')
             
             # Merge multi-select properties (like genres) based on FIELD_BEHAVIOR
-            notion_props = self._merge_multi_select_properties(page, notion_props, 'artists')
+            property_mappings = {}
+            if self.artists_properties.get('genres'):
+                prop_key = self._get_property_key(self.artists_properties['genres'], 'artists')
+                if prop_key:
+                    property_mappings['artists_genres_property_id'] = prop_key
+            if self.artists_properties.get('tags'):
+                prop_key = self._get_property_key(self.artists_properties['tags'], 'artists')
+                if prop_key:
+                    property_mappings['artists_tags_property_id'] = prop_key
+            notion_props = merge_multi_select_properties(page, notion_props, FIELD_BEHAVIOR, property_mappings)
             
             # Get artist image from Spotify
             artist_image_url = None
@@ -2457,83 +2472,6 @@ class NotionMusicBrainzSync:
             # Return new properties if merge fails
             return new_properties
     
-    def _merge_multi_select_properties(self, page: Dict, new_properties: Dict, database_type: str) -> Dict:
-        """Merge new multi-select properties with existing values based on FIELD_BEHAVIOR config.
-        
-        Args:
-            page: The existing Notion page
-            new_properties: New properties to be set
-            database_type: 'artists', 'albums', 'songs', or 'labels'
-            
-        Returns:
-            Updated properties dict with merged multi-select properties where configured
-        """
-        try:
-            existing_properties = page.get('properties', {})
-            merged_properties = new_properties.copy()
-            
-            # Get property IDs for this database type that should use merge behavior
-            property_mappings = {
-                'artists': {
-                    'genres': (self.artists_properties.get('genres'), 'artists_genres_property_id'),
-                    'tags': (self.artists_properties.get('tags'), 'artists_tags_property_id'),
-                },
-                'albums': {
-                    'genres': (self.albums_properties.get('genres'), 'albums_genres_property_id'),
-                    'tags': (self.albums_properties.get('tags'), 'albums_tags_property_id'),
-                },
-                'songs': {
-                    'genres': (self.songs_properties.get('genres'), 'songs_genres_property_id'),
-                    'tags': (self.songs_properties.get('tags'), 'songs_tags_property_id'),
-                },
-                'labels': {
-                    'genres': (self.labels_properties.get('genres'), 'labels_genres_property_id'),
-                    'tags': (self.labels_properties.get('tags'), 'labels_tags_property_id'),
-                }
-            }
-            
-            mappings = property_mappings.get(database_type, {})
-            
-            # Merge each multi-select property based on FIELD_BEHAVIOR
-            for field_name, (prop_id, config_key) in mappings.items():
-                if not prop_id:
-                    continue
-                
-                # Check if this property should use merge behavior
-                behavior = FIELD_BEHAVIOR.get(config_key, 'default')
-                if behavior != 'merge':
-                    continue
-                
-                # Get property key
-                prop_key = self._get_property_key(prop_id, database_type)
-                if not prop_key or prop_key not in new_properties:
-                    continue
-                
-                # Get existing multi-select values
-                existing_prop = existing_properties.get(prop_key, {})
-                existing_values = existing_prop.get('multi_select', [])
-                existing_names = {val.get('name') for val in existing_values if val.get('name')}
-                
-                # Get new multi-select values
-                new_prop = new_properties.get(prop_key, {})
-                new_values = new_prop.get('multi_select', [])
-                new_names = {val.get('name') for val in new_values if val.get('name')}
-                
-                # Merge: combine existing and new, avoiding duplicates
-                merged_names = existing_names | new_names
-                merged_values = [{'name': name} for name in sorted(merged_names)]
-                
-                # Update with merged values
-                merged_properties[prop_key] = {'multi_select': merged_values}
-                logger.info(f"Merged {database_type} {field_name}: {len(existing_values)} existing + {len(new_values)} new = {len(merged_values)} total")
-            
-            return merged_properties
-            
-        except Exception as e:
-            logger.warning(f"Error merging multi-select properties: {e}")
-            # Return new properties if merge fails
-            return new_properties
-    
     def _normalize_title_for_matching(self, title: str) -> List[str]:
         """Normalize a title for exact word matching.
         
@@ -2919,7 +2857,16 @@ class NotionMusicBrainzSync:
             notion_props = self._merge_relations(page, notion_props, 'albums')
             
             # Merge multi-select properties (like genres) based on FIELD_BEHAVIOR
-            notion_props = self._merge_multi_select_properties(page, notion_props, 'albums')
+            property_mappings = {}
+            if self.albums_properties.get('genres'):
+                prop_key = self._get_property_key(self.albums_properties['genres'], 'albums')
+                if prop_key:
+                    property_mappings['albums_genres_property_id'] = prop_key
+            if self.albums_properties.get('tags'):
+                prop_key = self._get_property_key(self.albums_properties['tags'], 'albums')
+                if prop_key:
+                    property_mappings['albums_tags_property_id'] = prop_key
+            notion_props = merge_multi_select_properties(page, notion_props, FIELD_BEHAVIOR, property_mappings)
             
             # Get cover art - try Cover Art Archive first, then Spotify as fallback
             cover_url = None
@@ -4519,7 +4466,16 @@ class NotionMusicBrainzSync:
             notion_props = self._merge_relations(page, notion_props, 'songs')
             
             # Merge multi-select properties (like genres) based on FIELD_BEHAVIOR
-            notion_props = self._merge_multi_select_properties(page, notion_props, 'songs')
+            property_mappings = {}
+            if self.songs_properties.get('genres'):
+                prop_key = self._get_property_key(self.songs_properties['genres'], 'songs')
+                if prop_key:
+                    property_mappings['songs_genres_property_id'] = prop_key
+            if self.songs_properties.get('tags'):
+                prop_key = self._get_property_key(self.songs_properties['tags'], 'songs')
+                if prop_key:
+                    property_mappings['songs_tags_property_id'] = prop_key
+            notion_props = merge_multi_select_properties(page, notion_props, FIELD_BEHAVIOR, property_mappings)
             
             # Set icon
             icon = '🎵'  # Musical note emoji for songs
@@ -4995,7 +4951,16 @@ class NotionMusicBrainzSync:
             notion_props = self._format_label_properties(label_data)
             
             # Merge multi-select properties (like genres) based on FIELD_BEHAVIOR
-            notion_props = self._merge_multi_select_properties(page, notion_props, 'labels')
+            property_mappings = {}
+            if self.labels_properties.get('genres'):
+                prop_key = self._get_property_key(self.labels_properties['genres'], 'labels')
+                if prop_key:
+                    property_mappings['labels_genres_property_id'] = prop_key
+            if self.labels_properties.get('tags'):
+                prop_key = self._get_property_key(self.labels_properties['tags'], 'labels')
+                if prop_key:
+                    property_mappings['labels_tags_property_id'] = prop_key
+            notion_props = merge_multi_select_properties(page, notion_props, FIELD_BEHAVIOR, property_mappings)
             
             # Set icon
             icon = '🏷️'  # Label emoji for labels

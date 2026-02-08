@@ -23,6 +23,7 @@ from shared.utils import (
     find_page_by_property,
     get_database_id,
     get_notion_token,
+    merge_multi_select_properties,
     normalize_id,
 )
 
@@ -1226,6 +1227,26 @@ class NotionGoogleBooksSync:
             
             # Format properties for Notion
             properties = self.format_notion_properties(book_data)
+            
+            # Merge multi-select properties based on FIELD_BEHAVIOR config
+            property_mappings = {}
+            field_mapping = [
+                ('authors_property_id', 'authors_property_id'),
+                ('categories_property_id', 'categories_property_id'),
+                ('publisher_property_id', 'publisher_property_id'),
+                ('artists_property_id', 'artists_property_id'),
+                ('cover_artists_property_id', 'cover_artists_property_id'),
+                ('language_property_id', 'language_property_id'),
+                ('series_property_id', 'series_property_id'),
+                ('content_rating_property_id', 'content_rating_property_id'),
+                ('book_type_property_id', 'book_type_property_id'),
+            ]
+            for prop_id_key, config_key in field_mapping:
+                if self.property_mapping.get(prop_id_key):
+                    prop_key = self._get_property_key(self.property_mapping[prop_id_key])
+                    if prop_key:
+                        property_mappings[config_key] = prop_key
+            properties = merge_multi_select_properties(page, properties, FIELD_BEHAVIOR, property_mappings)
             
             # Get cover URL if available
             cover_url = self.get_cover_url(book_data)
