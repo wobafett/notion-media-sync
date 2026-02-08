@@ -19,8 +19,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Route a single Notion page to the correct sync target")
     parser.add_argument("--page-id", required=False, help="Notion page ID or URL to sync (optional if --spotify-url or --google-books-url is provided)")
     parser.add_argument("--force-icons", action="store_true", help="Force update page icons if supported")
-    parser.add_argument("--force-all", action="store_true", help="Process page even if marked complete")
-    parser.add_argument("--force-update", action="store_true", help="Movies/books targets: force update completed entries")
+    parser.add_argument("--force-update", action="store_true", help="Force update even if already synced")
     parser.add_argument("--force-research", action="store_true", help="Books target: re-search even when IDs exist")
     parser.add_argument("--force-scraping", action="store_true", help="Books target: force ComicVine scraping")
     parser.add_argument("--dry-run", action="store_true", help="Books target: simulate sync without writing to Notion")
@@ -130,7 +129,6 @@ def main():
     options = {
         "page_id": page_id,
         "force_icons": args.force_icons,
-        "force_all": args.force_all,
         "force_update": args.force_update,
         "force_research": args.force_research,
         "force_scraping": args.force_scraping,

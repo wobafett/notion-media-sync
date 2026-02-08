@@ -1342,7 +1342,6 @@ class NotionTMDbSync:
         self, 
         page: Dict, 
         force_icons: bool = False, 
-        force_all: bool = False, 
         force_update: bool = False,
         update_only: Optional[List[str]] = None,
     ) -> Optional[bool]:
@@ -1351,8 +1350,7 @@ class NotionTMDbSync:
         Args:
             page: Notion page object
             force_icons: Force update page icons
-            force_all: Process all pages (including completed)
-            force_update: Force update even if page is completed
+            force_update: Force update even if page is already synced
             update_only: List of property names to update (e.g., ['rating', 'watch_providers'])
         
         Returns:
@@ -1414,9 +1412,9 @@ class NotionTMDbSync:
                 logger.warning(f"Could not get details for: {title}")
                 return False
             
-            # Check if content is completed and should be skipped (unless force_all or force_update is enabled)
+            # Check if content is completed and should be skipped (unless force_update is enabled)
             # Only skip if the page has been updated at least once (has TMDb data in Notion)
-            if not force_all and not force_update:
+            if not force_update:
                 status = details.get('status', '').lower()
                 has_tmdb_data = bool(current_data.get('tmdb_id_property_id'))
                 
@@ -1546,7 +1544,7 @@ class NotionTMDbSync:
             logger.error(f"Error fetching last edited page: {e}")
             return None
 
-    def run_sync_last_page(self, force_icons: bool = False, force_all: bool = False, force_update: bool = False) -> Dict:
+    def run_sync_last_page(self, force_icons: bool = False, force_update: bool = False) -> Dict:
         """Run synchronization for only the last edited page."""
         logger.info("Starting Notion-TMDb synchronization (LAST PAGE MODE)")
         if force_update:
@@ -1572,7 +1570,7 @@ class NotionTMDbSync:
         logger.info(f"Processing last edited page: {page.get('id')}")
         
         # Sync the single page
-        result = self.sync_page(page, force_icons=force_icons, force_all=force_all, force_update=force_update)
+        result = self.sync_page(page, force_icons=force_icons, force_update=force_update)
         
         end_time = time.time()
         duration = end_time - start_time
@@ -1613,7 +1611,6 @@ class NotionTMDbSync:
         page_id: str,
         *,
         force_icons: bool = False,
-        force_all: bool = False,
         force_update: bool = False,
     ) -> Dict:
         """Run synchronization for a specific page."""
@@ -1642,7 +1639,7 @@ class NotionTMDbSync:
                     'message': f'Page {page_id} does not belong to the configured database',
                 }
 
-        result_flag = self.sync_page(page, force_icons=force_icons, force_all=force_all, force_update=force_update)
+        result_flag = self.sync_page(page, force_icons=force_icons, force_update=force_update)
 
         results = {
             'success': True,
@@ -1666,7 +1663,6 @@ class NotionTMDbSync:
     def run_sync(
         self, 
         force_icons: bool = False, 
-        force_all: bool = False, 
         max_workers: int = 3, 
         force_update: bool = False,
         status_filter: Optional[str] = None,
@@ -1676,8 +1672,6 @@ class NotionTMDbSync:
         mode_parts = []
         if force_icons:
             mode_parts.append("FORCE ICONS")
-        if force_all:
-            mode_parts.append("FORCE ALL")
         if force_update:
             mode_parts.append("FORCE UPDATE")
         if status_filter:
@@ -1715,7 +1709,7 @@ class NotionTMDbSync:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all tasks
             future_to_page = {
-                executor.submit(self.sync_page, page, force_icons, force_all, force_update, update_only): page 
+                executor.submit(self.sync_page, page, force_icons, force_update, update_only): page 
                 for page in pages
             }
             
@@ -1813,7 +1807,6 @@ def enforce_worker_limits(workers: int) -> int:
 def run_sync(
     *,
     force_icons: bool = False,
-    force_all: bool = False,
     workers: int = 3,
     last_page: bool = False,
     page_id: Optional[str] = None,
@@ -1833,20 +1826,17 @@ def run_sync(
         return sync.run_page_sync(
             page_id,
             force_icons=force_icons,
-            force_all=force_all,
             force_update=force_update,
         )
 
     if last_page:
         return sync.run_sync_last_page(
             force_icons=force_icons,
-            force_all=force_all,
             force_update=force_update,
         )
 
     return sync.run_sync(
         force_icons=force_icons,
-        force_all=force_all,
         max_workers=workers,
         force_update=force_update,
         status_filter=status_filter,
@@ -1867,14 +1857,12 @@ def main():
         parser = argparse.ArgumentParser(description='Synchronize Notion database with TMDb data')
         parser.add_argument('--force-icons', action='store_true', 
                            help='Force update all page icons (one-time operation)')
-        parser.add_argument('--force-all', action='store_true',
-                           help='Process all pages including completed content (overrides skip optimization)')
         parser.add_argument('--workers', type=int, default=3, metavar='N',
                            help='Number of parallel workers (default: 3, max recommended: 5)')
         parser.add_argument('--last-page', action='store_true',
                            help='Sync only the most recently edited page (useful for iOS shortcuts)')
         parser.add_argument('--force-update', action='store_true',
-                           help='Force update pages even if they already have TMDb information (overrides skip optimization)')
+                           help='Force update pages even if already synced')
         args = parser.parse_args()
         
         # Validate workers parameter
@@ -1900,9 +1888,9 @@ def main():
         
         # Choose sync mode based on arguments
         if args.last_page:
-            result = sync.run_sync_last_page(force_icons=args.force_icons, force_all=args.force_all, force_update=args.force_update)
+            result = sync.run_sync_last_page(force_icons=args.force_icons, force_update=args.force_update)
         else:
-            result = sync.run_sync(force_icons=args.force_icons, force_all=args.force_all, max_workers=args.workers, force_update=args.force_update)
+            result = sync.run_sync(force_icons=args.force_icons, max_workers=args.workers, force_update=args.force_update)
         
         if result['success']:
             logger.info("Synchronization completed successfully")
@@ -1912,8 +1900,8 @@ def main():
                 logger.info("Last page mode completed - only the most recently edited page was processed")
             if args.force_icons:
                 logger.info("Force icons mode completed - all page icons have been updated")
-            if args.force_all:
-                logger.info("Force all mode completed - all pages processed including completed content")
+            if args.force_update:
+                logger.info("Force update mode completed - all pages processed including completed content")
             elif not args.force_icons and not args.last_page:
                 logger.info("Optimization mode completed - completed content was skipped for efficiency")
             sys.exit(0)

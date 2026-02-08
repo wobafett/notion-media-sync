@@ -1085,7 +1085,7 @@ class NotionIGDbSync:
             logger.error(f"Error extracting data from page {page.get('id')}: {e}")
             return None
     
-    def sync_page(self, page: Dict, force_icons: bool = False, force_all: bool = False) -> Optional[bool]:
+    def sync_page(self, page: Dict, force_icons: bool = False, force_update: bool = False) -> Optional[bool]:
         """Sync a single page with IGDb data with intelligent skip logic."""
         try:
             page_id = page['id']
@@ -1109,7 +1109,7 @@ class NotionIGDbSync:
                         logger.info(f"Found existing IGDb ID: {existing_igdb_id}")
             
             # Intelligent skip logic - check if page is already up to date
-            if existing_igdb_id and not force_all:
+            if existing_igdb_id and not force_update:
                 logger.info(f"🔍 Checking if {title} (IGDb ID: {existing_igdb_id}) needs updating...")
                 if self._is_page_up_to_date(page, existing_igdb_id):
                     logger.info(f"⏭️  Skipping {title} - already up to date")
@@ -1601,7 +1601,7 @@ class NotionIGDbSync:
             logger.debug(f"Error checking if page is up to date: {e}")
             return False
     
-    def _run_page_specific_sync(self, page_id: str, force_all: bool = False) -> Dict:
+    def _run_page_specific_sync(self, page_id: str, force_update: bool = False) -> Dict:
         """Run synchronization for a single explicit page."""
         logger.info(f"Page-specific mode enabled for Notion page {page_id}")
         start_time = time.time()
@@ -1635,7 +1635,7 @@ class NotionIGDbSync:
             }
         
         # Sync the single page
-        result = self.sync_page(page, force_icons=False, force_all=force_all)
+        result = self.sync_page(page, force_icons=False, force_update=force_update)
         
         # Build results dict
         results = {
@@ -1658,7 +1658,7 @@ class NotionIGDbSync:
         logger.info(f"Finished page-specific sync for page {page_id}")
         return results
     
-    def run_sync(self, force_icons: bool = False, force_all: bool = False, max_workers: int = 3, last_page: bool = False, page_id: Optional[str] = None) -> Dict:
+    def run_sync(self, force_icons: bool = False, force_update: bool = False, max_workers: int = 3, last_page: bool = False, page_id: Optional[str] = None) -> Dict:
         """Run the complete synchronization process."""
         # Handle page-specific sync
         if page_id:
@@ -1668,7 +1668,7 @@ class NotionIGDbSync:
                     'success': False,
                     'message': 'page-id mode cannot be combined with last-page mode'
                 }
-            return self._run_page_specific_sync(page_id, force_all)
+            return self._run_page_specific_sync(page_id, force_update)
         
         logger.info("Starting Notion-IGDb synchronization")
         logger.info(f"Using {max_workers} parallel workers for processing")
@@ -1703,7 +1703,7 @@ class NotionIGDbSync:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all tasks
             future_to_page = {
-                executor.submit(self.sync_page, page, force_icons, force_all): page 
+                executor.submit(self.sync_page, page, force_icons, force_update): page 
                 for page in pages
             }
             
@@ -1803,7 +1803,7 @@ def enforce_worker_limits(workers: int) -> int:
 def run_sync(
     *,
     force_icons: bool = False,
-    force_all: bool = False,
+    force_update: bool = False,
     workers: int = 3,
     last_page: bool = False,
     page_id: Optional[str] = None,
@@ -1817,7 +1817,7 @@ def run_sync(
     sync = _build_sync_instance()
     return sync.run_sync(
         force_icons=force_icons,
-        force_all=force_all,
+        force_update=force_update,
         max_workers=workers,
         last_page=last_page,
         page_id=page_id,

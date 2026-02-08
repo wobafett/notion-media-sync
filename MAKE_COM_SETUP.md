@@ -156,7 +156,7 @@ This guide shows you how to automatically trigger GitHub Actions when pages are 
       - **Body Type**: `Raw` (make sure Content-Type header is set to `application/json`)
      - **Request Content**: 
        ```
-       {"event_type":"sync","client_payload":{"page_id":"{{1.data.id}}","force_all":false}}
+       {"event_type":"sync","client_payload":{"page_id":"{{1.data.id}}","force_update":false}}
        ```
       - **Important**: 
        - Use a single-line JSON (no line breaks)
@@ -167,7 +167,7 @@ This guide shows you how to automatically trigger GitHub Actions when pages are 
         - `event_type`: `sync`
         - `client_payload`: (object)
          - `page_id`: `{{1.data.id}}` (the Notion page that triggered the webhook)
-         - `force_all`: `false`
+         - `force_update`: `false`
 
 > ⚠️ **Important:** Repository-dispatch runs without a `page_id` will abort immediately to avoid accidental full-database syncs. Always include the page ID when available.
 
@@ -274,7 +274,7 @@ The HTTP request to GitHub should be:
   "event_type": "sync",
   "client_payload": {
     "page_id": "{{trigger_page_id}}",
-    "force_all": false
+    "force_update": false
   }
 }
 ```

@@ -549,7 +549,7 @@ class NotionGoogleBooksSync:
             logger.error(f"Error fetching last edited page: {e}")
             return None
     
-    def sync_last_page(self, force_icons: bool = False, force_all: bool = False, force_research: bool = False, dry_run: bool = False) -> Dict:
+    def sync_last_page(self, force_icons: bool = False, force_update: bool = False, force_research: bool = False, dry_run: bool = False) -> Dict:
         """Sync only the most recently edited page."""
         logger.info("Starting sync for last edited page only")
         
@@ -571,7 +571,7 @@ class NotionGoogleBooksSync:
         
         # Sync the single page
         try:
-            result = self.sync_page(page, force_icons, force_all, force_research, dry_run)
+            result = self.sync_page(page, force_icons, force_update, force_research, dry_run)
             
             end_time = time.time()
             duration = end_time - start_time
@@ -1037,7 +1037,7 @@ class NotionGoogleBooksSync:
         
         return properties
     
-    def sync_page(self, page: Dict, force_icons: bool = False, force_all: bool = False, force_research: bool = False, dry_run: bool = False) -> Optional[bool]:
+    def sync_page(self, page: Dict, force_icons: bool = False, force_update: bool = False, force_research: bool = False, dry_run: bool = False) -> Optional[bool]:
         """Sync a single page with Google Books data."""
         try:
             page_id = page['id']
@@ -1067,7 +1067,7 @@ class NotionGoogleBooksSync:
             existing_wookieepedia_id = existing_ids['wookieepedia_id']
             
             # Skip processing if any ID exists and not forcing all updates
-            if not force_all and (existing_google_books_id or existing_jikan_id or existing_comicvine_id or existing_wookieepedia_id):
+            if not force_update and (existing_google_books_id or existing_jikan_id or existing_comicvine_id or existing_wookieepedia_id):
                 logger.info(f"⏭️ Skipping '{title}' - already has API ID(s): "
                            f"Google Books: {existing_google_books_id or 'None'}, "
                            f"Jikan: {existing_jikan_id or 'None'}, "
@@ -1911,7 +1911,7 @@ class NotionGoogleBooksSync:
                                 if existing_title.lower() == book_title.lower():
                                     logger.info(f"Book already exists in Notion: {existing_page_id}")
                                     # Update the existing page
-                                    self.sync_page(page, force_all=True)
+                                    self.sync_page(page, force_update=True)
                                     
                                     # Explicitly set Google Books URL
                                     url_prop_id = self.property_mapping.get('google_books_url_property_id')
@@ -1990,7 +1990,7 @@ class NotionGoogleBooksSync:
             'created': True
         }
     
-    def run_sync(self, force_icons: bool = False, force_all: bool = False, max_workers: int = 3, force_research: bool = False, dry_run: bool = False, google_books_url: Optional[str] = None) -> Dict:
+    def run_sync(self, force_icons: bool = False, force_update: bool = False, max_workers: int = 3, force_research: bool = False, dry_run: bool = False, google_books_url: Optional[str] = None) -> Dict:
         """Run the complete synchronization process."""
         # Google Books URL creation mode takes precedence
         if google_books_url:
@@ -2021,7 +2021,7 @@ class NotionGoogleBooksSync:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all tasks
             future_to_page = {
-                executor.submit(self.sync_page, page, force_icons, force_all, force_research, dry_run): page 
+                executor.submit(self.sync_page, page, force_icons, force_update, force_research, dry_run): page 
                 for page in pages
             }
             
@@ -2069,7 +2069,7 @@ class NotionGoogleBooksSync:
         page_id: str,
         *,
         force_icons: bool = False,
-        force_all: bool = False,
+        force_update: bool = False,
         force_research: bool = False,
         dry_run: bool = False,
     ) -> Dict:
@@ -2102,7 +2102,7 @@ class NotionGoogleBooksSync:
                 }
 
         start_time = time.time()
-        result = self.sync_page(page, force_icons, force_all, force_research, dry_run)
+        result = self.sync_page(page, force_icons, force_update, force_research, dry_run)
         duration = time.time() - start_time
 
         if result is True:
@@ -2189,7 +2189,7 @@ def enforce_worker_limits(workers: int) -> int:
 def run_sync(
     *,
     force_icons: bool = False,
-    force_all: bool = False,
+    force_update: bool = False,
     workers: int = 3,
     last_page: bool = False,
     page_id: Optional[str] = None,
@@ -2215,7 +2215,7 @@ def run_sync(
         return sync.run_page_sync(
             page_id,
             force_icons=force_icons,
-            force_all=force_all,
+            force_update=force_update,
             force_research=force_research,
             dry_run=dry_run,
         )
@@ -2223,14 +2223,14 @@ def run_sync(
     if last_page:
         return sync.sync_last_page(
             force_icons=force_icons,
-            force_all=force_all,
+            force_update=force_update,
             force_research=force_research,
             dry_run=dry_run,
         )
 
     return sync.run_sync(
         force_icons=force_icons,
-        force_all=force_all,
+        force_update=force_update,
         max_workers=workers,
         force_research=force_research,
         dry_run=dry_run,

@@ -1525,7 +1525,7 @@ class NotionMusicBrainzSync:
         if self.notion.update_page(page_id, update_payload):
             cache[normalized] = page_id
     
-    def sync_artist_page(self, page: Dict, force_all: bool = False, spotify_url: str = None) -> Optional[bool]:
+    def sync_artist_page(self, page: Dict, force_update: bool = False, spotify_url: str = None) -> Optional[bool]:
         """Sync a single artist page with MusicBrainz data."""
         try:
             page_id = page['id']
@@ -1606,9 +1606,9 @@ class NotionMusicBrainzSync:
                 if not artist_data:
                     logger.warning(f"Could not find artist with MBID {existing_mbid}, searching by name")
                     existing_mbid = None
-                elif not force_all:
-                    # Skip pages with existing MBIDs unless force_all is True
-                    logger.info(f"Skipping artist '{title}' - already has MBID {existing_mbid} (use --force-all to update)")
+                elif not force_update:
+                    # Skip pages with existing MBIDs unless force_update is True
+                    logger.info(f"Skipping artist '{title}' - already has MBID {existing_mbid} (use --force-update to update)")
                     return None
             
             if not artist_data:
@@ -2515,7 +2515,7 @@ class NotionMusicBrainzSync:
         except Exception:
             return None
     
-    def sync_album_page(self, page: Dict, force_all: bool = False, spotify_url: str = None) -> Optional[bool]:
+    def sync_album_page(self, page: Dict, force_update: bool = False, spotify_url: str = None) -> Optional[bool]:
         """Sync a single album page with MusicBrainz data."""
         try:
             page_id = page['id']
@@ -2646,13 +2646,13 @@ class NotionMusicBrainzSync:
                             # Only clear if we're absolutely sure the artist is wrong (which we can't know yet)
                         else:
                             logger.info(f"Existing release {existing_mbid} contains all related songs, using it")
-                            # Skip pages with existing MBIDs unless force_all is True
-                            if not force_all:
-                                logger.info(f"Skipping album '{title}' - already has MBID {existing_mbid} (use --force-all to update)")
+                            # Skip pages with existing MBIDs unless force_update is True
+                            if not force_update:
+                                logger.info(f"Skipping album '{title}' - already has MBID {existing_mbid} (use --force-update to update)")
                                 return None
-                    elif not force_all:
-                        # No related songs to verify, skip if force_all is False
-                        logger.info(f"Skipping album '{title}' - already has MBID {existing_mbid} (use --force-all to update)")
+                    elif not force_update:
+                        # No related songs to verify, skip if force_update is False
+                        logger.info(f"Skipping album '{title}' - already has MBID {existing_mbid} (use --force-update to update)")
                         return None
             
             spotify_album_data = None
@@ -4004,7 +4004,7 @@ class NotionMusicBrainzSync:
             logger.error(f"Error finding/creating song page for '{song_title}': {e}")
             return None
     
-    def sync_song_page(self, page: Dict, force_all: bool = False, spotify_url: str = None) -> Optional[bool]:
+    def sync_song_page(self, page: Dict, force_update: bool = False, spotify_url: str = None) -> Optional[bool]:
         """Sync a single song page with MusicBrainz data."""
         try:
             page_id = page['id']
@@ -4151,9 +4151,9 @@ class NotionMusicBrainzSync:
                 if not recording_data:
                     logger.warning(f"Could not find recording with MBID {existing_mbid}, searching by title")
                     existing_mbid = None
-                elif not force_all:
-                    # Skip pages with existing MBIDs unless force_all is True
-                    logger.info(f"Skipping song '{title}' - already has MBID {existing_mbid} (use --force-all to update)")
+                elif not force_update:
+                    # Skip pages with existing MBIDs unless force_update is True
+                    logger.info(f"Skipping song '{title}' - already has MBID {existing_mbid} (use --force-update to update)")
                     return None
             
             if not recording_data:
@@ -4829,7 +4829,7 @@ class NotionMusicBrainzSync:
         
         return properties
     
-    def sync_label_page(self, page: Dict, force_all: bool = False) -> Optional[bool]:
+    def sync_label_page(self, page: Dict, force_update: bool = False) -> Optional[bool]:
         """Sync a single label page with MusicBrainz data."""
         try:
             page_id = page['id']
@@ -4872,9 +4872,9 @@ class NotionMusicBrainzSync:
                 if not label_data:
                     logger.warning(f"Could not find label with MBID {existing_mbid}, searching by name")
                     existing_mbid = None
-                elif not force_all:
-                    # Skip pages with existing MBIDs unless force_all is True
-                    logger.info(f"Skipping label '{title}' - already has MBID {existing_mbid} (use --force-all to update)")
+                elif not force_update:
+                    # Skip pages with existing MBIDs unless force_update is True
+                    logger.info(f"Skipping label '{title}' - already has MBID {existing_mbid} (use --force-update to update)")
                     return None
             
             if not label_data:
@@ -5097,21 +5097,21 @@ class NotionMusicBrainzSync:
                 return name
         return None
     
-    def _process_page_by_db_name(self, db_name: str, page: Dict, force_all: bool) -> Optional[bool]:
+    def _process_page_by_db_name(self, db_name: str, page: Dict, force_update: bool) -> Optional[bool]:
         """Dispatch page processing based on database name."""
         if db_name == 'artists':
-            return self.sync_artist_page(page, force_all)
+            return self.sync_artist_page(page, force_update)
         if db_name == 'albums':
-            return self.sync_album_page(page, force_all)
+            return self.sync_album_page(page, force_update)
         if db_name == 'songs':
-            return self.sync_song_page(page, force_all)
+            return self.sync_song_page(page, force_update)
         if db_name == 'labels':
-            return self.sync_label_page(page, force_all)
+            return self.sync_label_page(page, force_update)
         
         logger.error(f"Unsupported database '{db_name}' for page {page.get('id')}")
         return None
     
-    def _run_page_specific_sync(self, page_id: str, force_all: bool, expected_database: str) -> Dict:
+    def _run_page_specific_sync(self, page_id: str, force_update: bool, expected_database: str) -> Dict:
         """Run synchronization for a single explicit page."""
         logger.info(f"Page-specific mode enabled for Notion page {page_id}")
         start_time = time.time()
@@ -5157,7 +5157,7 @@ class NotionMusicBrainzSync:
         if db_name in ['artists', 'labels'] and self.locations_db_id:
             self._load_locations_cache()
         
-        result_flag = self._process_page_by_db_name(db_name, page, force_all)
+        result_flag = self._process_page_by_db_name(db_name, page, force_update)
         results = self._init_results()
         results['total_pages'] = 1
         if result_flag is True:
@@ -5259,7 +5259,7 @@ class NotionMusicBrainzSync:
                     # Update the existing page
                     page = self.notion.get_page(existing_page_id)
                     if page:
-                        self.sync_song_page(page, force_all=True, spotify_url=spotify_url)
+                        self.sync_song_page(page, force_update=True, spotify_url=spotify_url)
                     return {
                         'success': True,
                         'message': f'Updated existing song: {track_name}',
@@ -5368,7 +5368,7 @@ class NotionMusicBrainzSync:
         # Now sync the page to populate all fields
         page = self.notion.get_page(song_page_id)
         if page:
-            sync_result = self.sync_song_page(page, force_all=True, spotify_url=spotify_url)
+            sync_result = self.sync_song_page(page, force_update=True, spotify_url=spotify_url)
             
             # If MusicBrainz sync failed, populate with Spotify data as fallback
             if not sync_result and spotify_data:
@@ -5496,7 +5496,7 @@ class NotionMusicBrainzSync:
                                 # Check if titles match (case-insensitive)
                                 if existing_title.lower() == album_name.lower():
                                     logger.info(f"Album already exists in Notion: {existing_page_id}")
-                                    self.sync_album_page(page, force_all=True, spotify_url=spotify_url)
+                                    self.sync_album_page(page, force_update=True, spotify_url=spotify_url)
                                     return {
                                         'success': True,
                                         'message': f'Updated existing album: {album_name}',
@@ -5535,7 +5535,7 @@ class NotionMusicBrainzSync:
         # Now sync the page to populate all fields
         page = self.notion.get_page(album_page_id)
         if page:
-            self.sync_album_page(page, force_all=True, spotify_url=spotify_url)
+            self.sync_album_page(page, force_update=True, spotify_url=spotify_url)
         
         return {
             'success': True,
@@ -5579,7 +5579,7 @@ class NotionMusicBrainzSync:
                                 # Check if names match (case-insensitive)
                                 if existing_name.lower() == artist_name.lower():
                                     logger.info(f"Artist already exists in Notion: {existing_page_id}")
-                                    self.sync_artist_page(page, force_all=True, spotify_url=spotify_url)
+                                    self.sync_artist_page(page, force_update=True, spotify_url=spotify_url)
                                     return {
                                         'success': True,
                                         'message': f'Updated existing artist: {artist_name}',
@@ -5624,7 +5624,7 @@ class NotionMusicBrainzSync:
         # Now sync the page to populate all fields
         page = self.notion.get_page(artist_page_id)
         if page:
-            self.sync_artist_page(page, force_all=True, spotify_url=spotify_url)
+            self.sync_artist_page(page, force_update=True, spotify_url=spotify_url)
         
         return {
             'success': True,
@@ -5637,7 +5637,7 @@ class NotionMusicBrainzSync:
     def run_sync(
         self,
         database: str = 'all',
-        force_all: bool = False,
+        force_update: bool = False,
         last_page: bool = False,
         created_after: Optional[str] = None,
         page_id: Optional[str] = None,
@@ -5647,7 +5647,7 @@ class NotionMusicBrainzSync:
         
         Args:
             database: Which database to sync or 'all'
-            force_all: Update pages even if they already have MBIDs
+            force_update: Update pages even if they already have MBIDs
             last_page: Only process the most recently edited page
             created_after: ISO timestamp string to filter pages by creation date
             page_id: Explicit Notion page ID to sync
@@ -5669,7 +5669,7 @@ class NotionMusicBrainzSync:
                 }
             if created_after:
                 logger.warning("--created-after is ignored when --page-id is provided")
-            return self._run_page_specific_sync(page_id, force_all, database)
+            return self._run_page_specific_sync(page_id, force_update, database)
         
         if database not in ['artists', 'albums', 'songs', 'labels', 'all']:
             logger.error(f"Invalid database: {database}. Must be 'artists', 'albums', 'songs', 'labels', or 'all'")
@@ -5740,7 +5740,7 @@ class NotionMusicBrainzSync:
             # Process pages (single-threaded due to rate limiting)
             for i, page in enumerate(pages, 1):
                 try:
-                    result = self._process_page_by_db_name(db_name, page, force_all)
+                    result = self._process_page_by_db_name(db_name, page, force_update)
                     if result is True:
                         successful += 1
                     elif result is False:
@@ -5824,7 +5824,7 @@ def _build_sync_instance() -> NotionMusicBrainzSync:
 def run_sync(
     *,
     database: str = 'all',
-    force_all: bool = False,
+    force_update: bool = False,
     last_page: bool = False,
     created_after: Optional[str] = None,
     page_id: Optional[str] = None,
@@ -5864,7 +5864,7 @@ def run_sync(
                 raise ValueError("--created-after must be in YYYY-MM-DD format or 'today'")
     return _build_sync_instance().run_sync(
         database=database,
-        force_all=force_all,
+        force_update=force_update,
         last_page=last_page,
         created_after=normalized_created_after,
         page_id=page_id,

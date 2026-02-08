@@ -26,11 +26,6 @@ def build_parser(targets) -> argparse.ArgumentParser:
         help="Force update all page icons (one-time operation)",
     )
     parser.add_argument(
-        "--force-all",
-        action="store_true",
-        help="Process all pages including completed content",
-    )
-    parser.add_argument(
         "--workers",
         type=int,
         default=3,
@@ -60,7 +55,7 @@ def build_parser(targets) -> argparse.ArgumentParser:
     parser.add_argument(
         "--force-update",
         action="store_true",
-        help="Force update even if content is completed (movies target only)",
+        help="Force update even if content is already synced",
     )
     parser.add_argument(
         "--force-research",
@@ -140,7 +135,7 @@ def main(default_target: Optional[str] = None):
     try:
         run_options = {
             "force_icons": args.force_icons,
-            "force_all": args.force_all,
+            "force_update": args.force_update,
             "workers": args.workers,
             "last_page": args.last_page,
             "page_id": args.page_id,
