@@ -1,4 +1,4 @@
-name: Scheduled Targeted Syncs
+name: Scheduled Cron Jobs
 
 on:
   schedule:
