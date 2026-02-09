@@ -19,6 +19,7 @@ from notion_client import Client
 from shared.logging_config import get_logger, setup_logging
 from shared.notion_api import NotionAPI
 from shared.utils import build_multi_select_options, build_created_after_filter, get_database_id, get_notion_token, normalize_id
+from shared.change_detection import has_property_changes
 
 setup_logging('notion_tmdb_sync.log')
 logger = get_logger(__name__)
@@ -549,499 +550,336 @@ class NotionTMDbSync:
         else:
             logger.warning("Failed to backfill content type for page %s", page_id)
     
-    def compare_and_format_properties(self, current_data: Dict, tmdb_data: Dict, content_type: str, update_only: Optional[List[str]] = None) -> tuple[Dict, bool]:
-        """
-        Compare current data with TMDb data and return only changed properties.
+    def format_all_properties(self, tmdb_data: Dict, content_type: str) -> Dict:
+        """Format all TMDb properties for Notion (core + extended)."""
+        properties = {}
         
-        Args:
-            current_data: Current Notion page data
-            tmdb_data: TMDb API data
-            content_type: 'movie' or 'tv'
-            update_only: List of property names to update (e.g., ['rating', 'watch_providers'])
-                        If None, update all properties as before.
-        """
         try:
-            new_properties = {}
-            has_changes = False
-            
-            # Map friendly names to property IDs
-            property_name_map = {
-                'rating': 'rating_property_id',
-                'watch_providers': 'watch_providers_property_id',
-                'seasons': 'seasons_property_id',
-                'total_episodes': 'episodes_property_id',
-                'latest_episode': 'released_episodes_property_id',
-                'next_episode': 'next_episode_property_id',
-                'genres': 'genres_property_id',
-                'cast': 'cast_property_id',
-                'director': 'director_property_id',
-                'creator': 'creator_property_id',
-                'production_companies': 'production_companies_property_id',
-                'description': 'description_property_id',
-                'release_date': 'release_date_property_id',
-                'runtime': 'runtime_minutes_property_id',
-                'tagline': 'tagline_property_id',
-                'original_language': 'original_language_property_id',
-                'production_countries': 'production_countries_property_id',
-                'collection': 'collection_property_id',
-            }
-            
-            # If update_only specified, convert to property ID set
-            allowed_properties = None
-            if update_only:
-                allowed_properties = set()
-                for name in update_only:
-                    prop_id_key = property_name_map.get(name, f"{name}_property_id")
-                    allowed_properties.add(prop_id_key)
-                logger.info(f"Limiting updates to properties: {', '.join(update_only)}")
-            
-            # Helper function to check if property should be updated
-            def should_update_property(property_id_key: str) -> bool:
-                if allowed_properties is None:
-                    return True  # Update all if no filter specified
-                return property_id_key in allowed_properties
-            
-            # Helper function to compare values
-            def values_differ(current_val, new_val):
-                if current_val is None and new_val is not None:
-                    return True
-                if current_val is not None and new_val is None:
-                    return True
-                if current_val != new_val:
-                    return True
-                return False
-            
-            # Helper function to compare lists (for multi-select)
-            def lists_differ(current_list, new_list):
-                if not current_list and not new_list:
-                    return False
-                if not current_list or not new_list:
-                    return True
-                return set(current_list) != set(new_list)
+            # --- CORE PROPERTIES ---
             
             # Title
             if tmdb_data.get('title') or tmdb_data.get('name'):
-                new_title = tmdb_data.get('title') or tmdb_data.get('name')
-                current_title = current_data.get('title_property_id')
-                if values_differ(current_title, new_title) and self.property_mapping['title_property_id']:
+                title = tmdb_data.get('title') or tmdb_data.get('name')
+                if self.property_mapping['title_property_id']:
                     property_key = self._get_property_key(self.property_mapping['title_property_id'])
                     if property_key:
-                        new_properties[property_key] = {
-                            'title': [{'text': {'content': new_title}}]
+                        properties[property_key] = {
+                            'title': [{'text': {'content': title}}]
                         }
-                        has_changes = True
             
             # Description
             if tmdb_data.get('overview') and self.property_mapping['description_property_id']:
-                current_desc = current_data.get('description_property_id')
-                if values_differ(current_desc, tmdb_data['overview']):
-                    property_key = self._get_property_key(self.property_mapping['description_property_id'])
-                    if property_key:
-                        new_properties[property_key] = {
-                            'rich_text': [{'text': {'content': tmdb_data['overview']}}]
-                        }
-                        has_changes = True
+                property_key = self._get_property_key(self.property_mapping['description_property_id'])
+                if property_key:
+                    properties[property_key] = {
+                        'rich_text': [{'text': {'content': tmdb_data['overview']}}]
+                    }
             
             # Release Date
             if (tmdb_data.get('release_date') or tmdb_data.get('first_air_date')) and self.property_mapping['release_date_property_id']:
-                new_date = tmdb_data.get('release_date') or tmdb_data.get('first_air_date')
-                current_date = current_data.get('release_date_property_id')
-                if values_differ(current_date, new_date):
-                    property_key = self._get_property_key(self.property_mapping['release_date_property_id'])
-                    if property_key:
-                        new_properties[property_key] = {
-                            'date': {'start': new_date}
-                        }
-                        has_changes = True
+                release_date = tmdb_data.get('release_date') or tmdb_data.get('first_air_date')
+                property_key = self._get_property_key(self.property_mapping['release_date_property_id'])
+                if property_key:
+                    properties[property_key] = {
+                        'date': {'start': release_date}
+                    }
             
             # Genres
             if tmdb_data.get('genres') and self.property_mapping['genres_property_id']:
-                behavior = self.field_behavior.get('genres_property_id', 'default')
-                tmdb_genres = [genre['name'] for genre in tmdb_data['genres']]
-                current_genres = current_data.get('genres_property_id', [])
-                
-                result_genres = self._handle_field_behavior(tmdb_genres, current_genres, 'genres', behavior)
-                
-                if result_genres is not None and lists_differ(current_genres, result_genres):
-                    property_key = self._get_property_key(self.property_mapping['genres_property_id'])
-                    if property_key:
-                        genre_options = build_multi_select_options(result_genres, context='genres')
-                        new_properties[property_key] = {'multi_select': genre_options}
-                        has_changes = True
+                genre_names = [genre['name'] for genre in tmdb_data['genres']]
+                property_key = self._get_property_key(self.property_mapping['genres_property_id'])
+                if property_key:
+                    genre_options = build_multi_select_options(genre_names, context='genres')
+                    properties[property_key] = {'multi_select': genre_options}
             
             # Status
             if tmdb_data.get('status') and self.property_mapping['status_property_id']:
-                current_status = current_data.get('status_property_id')
-                if values_differ(current_status, tmdb_data['status']):
-                    property_key = self._get_property_key(self.property_mapping['status_property_id'])
-                    if property_key:
-                        new_properties[property_key] = {
-                            'status': {'name': tmdb_data['status']}
-                        }
-                        has_changes = True
-
+                property_key = self._get_property_key(self.property_mapping['status_property_id'])
+                if property_key:
+                    properties[property_key] = {
+                        'status': {'name': tmdb_data['status']}
+                    }
+            
             # Rating (vote average)
             if tmdb_data.get('vote_average') is not None and self.property_mapping['rating_property_id']:
-                current_rating = current_data.get('rating_property_id')
-                new_rating = tmdb_data['vote_average']
-                if values_differ(current_rating, new_rating):
-                    property_key = self._get_property_key(self.property_mapping['rating_property_id'])
-                    if property_key:
-                        new_properties[property_key] = {
-                            'number': new_rating
-                        }
-                        has_changes = True
+                property_key = self._get_property_key(self.property_mapping['rating_property_id'])
+                if property_key:
+                    properties[property_key] = {
+                        'number': tmdb_data['vote_average']
+                    }
             
-            # TMDb ID
+            # TMDB ID
             if tmdb_data.get('id') and self.property_mapping['tmdb_id_property_id']:
-                current_tmdb_id = current_data.get('tmdb_id_property_id')
-                if values_differ(current_tmdb_id, tmdb_data['id']):
-                    property_key = self._get_property_key(self.property_mapping['tmdb_id_property_id'])
-                    if property_key:
-                        new_properties[property_key] = {
-                            'number': tmdb_data['id']
-                        }
-                        has_changes = True
+                property_key = self._get_property_key(self.property_mapping['tmdb_id_property_id'])
+                if property_key:
+                    properties[property_key] = {
+                        'number': tmdb_data['id']
+                    }
             
             # Runtime/Seasons
             if content_type == 'movie' and tmdb_data.get('runtime') and self.property_mapping['runtime_minutes_property_id']:
-                current_runtime = current_data.get('runtime_minutes_property_id')
-                if values_differ(current_runtime, tmdb_data['runtime']):
-                    property_key = self._get_property_key(self.property_mapping['runtime_minutes_property_id'])
-                    if property_key:
-                        new_properties[property_key] = {
-                            'number': tmdb_data['runtime']
-                        }
-                        has_changes = True
-            elif should_update_property('seasons_property_id') and content_type == 'tv' and tmdb_data.get('number_of_seasons') and self.property_mapping['seasons_property_id']:
-                current_seasons = current_data.get('seasons_property_id')
-                if values_differ(current_seasons, tmdb_data['number_of_seasons']):
-                    property_key = self._get_property_key(self.property_mapping['seasons_property_id'])
-                    if property_key:
-                        new_properties[property_key] = {
-                            'number': tmdb_data['number_of_seasons']
-                        }
-                        has_changes = True
-
-            # Content Type select (backfill when inferred)
+                property_key = self._get_property_key(self.property_mapping['runtime_minutes_property_id'])
+                if property_key:
+                    properties[property_key] = {
+                        'number': tmdb_data['runtime']
+                    }
+            elif content_type == 'tv' and tmdb_data.get('number_of_seasons') and self.property_mapping['seasons_property_id']:
+                property_key = self._get_property_key(self.property_mapping['seasons_property_id'])
+                if property_key:
+                    properties[property_key] = {
+                        'number': tmdb_data['number_of_seasons']
+                    }
+            
+            # Content Type
             select_value = self._normalize_content_type_value(content_type)
             if select_value and self.property_mapping['content_type_property_id']:
-                current_type = current_data.get('content_type_property_id')
-                if values_differ(current_type, select_value):
-                    property_key = self._get_property_key(self.property_mapping['content_type_property_id'])
-                    if property_key:
-                        new_properties[property_key] = {
-                            'select': {'name': select_value}
-                        }
-                        has_changes = True
+                property_key = self._get_property_key(self.property_mapping['content_type_property_id'])
+                if property_key:
+                    properties[property_key] = {
+                        'select': {'name': select_value}
+                    }
             
-            # Extended properties
-            # Check if this is an initial sync (no TMDb ID) or subsequent sync
-            current_tmdb_id = current_data.get('tmdb_id_property_id')
+            # --- EXTENDED PROPERTIES ---
             
-            if current_tmdb_id is None:
-                # Initial sync - format all extended properties
-                logger.info("Initial sync detected - formatting all extended properties")
-                self._format_extended_properties(tmdb_data, content_type, new_properties)
-                has_changes = True  # Always has changes on initial sync
-            else:
-                # Subsequent sync - only compare changed properties
-                has_changes = self._compare_extended_properties(current_data, tmdb_data, content_type, new_properties, has_changes, update_only)
-            
-            return new_properties, has_changes
-            
-        except Exception as e:
-            logger.error(f"Error comparing properties: {e}")
-            return {}, False
-    
-    def _compare_extended_properties(self, current_data: Dict, tmdb_data: Dict, content_type: str, new_properties: Dict, has_changes: bool, update_only: Optional[List[str]] = None) -> bool:
-        """Compare extended properties and add changes to new_properties."""
-        try:
-            # Map friendly names to property IDs (same as in compare_and_format_properties)
-            property_name_map = {
-                'rating': 'rating_property_id',
-                'watch_providers': 'watch_providers_property_id',
-                'seasons': 'seasons_property_id',
-                'total_episodes': 'episodes_property_id',
-                'latest_episode': 'released_episodes_property_id',
-                'next_episode': 'next_episode_property_id',
-                'genres': 'genres_property_id',
-                'cast': 'cast_property_id',
-                'director': 'director_property_id',
-                'creator': 'creator_property_id',
-                'production_companies': 'production_companies_property_id',
-                'description': 'description_property_id',
-                'release_date': 'release_date_property_id',
-                'runtime': 'runtime_minutes_property_id',
-                'tagline': 'tagline_property_id',
-                'original_language': 'original_language_property_id',
-                'production_countries': 'production_countries_property_id',
-                'collection': 'collection_property_id',
-            }
-            
-            # If update_only specified, convert to property ID set
-            allowed_properties = None
-            if update_only:
-                allowed_properties = set()
-                for name in update_only:
-                    prop_id_key = property_name_map.get(name, f"{name}_property_id")
-                    allowed_properties.add(prop_id_key)
-            
-            # Helper function to check if property should be updated
-            def should_update_property(property_id_key: str) -> bool:
-                if allowed_properties is None:
-                    return True  # Update all if no filter specified
-                return property_id_key in allowed_properties
-            
-            # Episodes (TV shows) - Total planned episodes (including future seasons)
-            if should_update_property('episodes_property_id') and content_type == 'tv' and tmdb_data.get('number_of_episodes') and self.property_mapping['episodes_property_id']:
-                current_episodes = current_data.get('episodes_property_id')
-                if current_episodes != tmdb_data['number_of_episodes']:
-                    property_key = self._get_property_key(self.property_mapping['episodes_property_id'])
-                    if property_key:
-                        new_properties[property_key] = {
-                            'number': tmdb_data['number_of_episodes']
-                        }
-                        has_changes = True
+            # Episodes (TV shows) - Total planned episodes
+            if content_type == 'tv' and tmdb_data.get('number_of_episodes') and self.property_mapping['episodes_property_id']:
+                property_key = self._get_property_key(self.property_mapping['episodes_property_id'])
+                if property_key:
+                    properties[property_key] = {
+                        'number': tmdb_data['number_of_episodes']
+                    }
             
             # Released Episodes (TV shows) - Last episode number that has aired
-            if should_update_property('released_episodes_property_id') and content_type == 'tv' and self.property_mapping['released_episodes_property_id']:
+            if content_type == 'tv' and self.property_mapping['released_episodes_property_id']:
                 released_episodes = None
-                
-                # Use last_episode_to_air to get the actual last aired episode
                 last_episode = tmdb_data.get('last_episode_to_air')
                 if last_episode and last_episode.get('episode_number') and last_episode.get('season_number'):
-                    # Calculate cumulative episode number across all seasons
                     seasons = tmdb_data.get('seasons', [])
                     if seasons:
                         cumulative_episodes = 0
                         last_season = last_episode.get('season_number', 0)
-                        
-                        # Sum episodes from all seasons up to and including the last aired season
                         for season in seasons:
                             season_number = season.get('season_number', 0)
                             if season_number > 0 and season_number < last_season:
-                                # For completed seasons, count all episodes
                                 if season.get('air_date'):
                                     cumulative_episodes += season.get('episode_count', 0)
                             elif season_number == last_season:
-                                # For the last aired season, only count up to the last aired episode
                                 cumulative_episodes += last_episode.get('episode_number', 0)
                                 break
-                        
                         if cumulative_episodes > 0:
                             released_episodes = cumulative_episodes
-                
-                # Update if we found released episodes data
                 if released_episodes is not None:
-                    current_released_episodes = current_data.get('released_episodes_property_id')
-                    if current_released_episodes != released_episodes:
-                        property_key = self._get_property_key(self.property_mapping['released_episodes_property_id'])
-                        if property_key:
-                            new_properties[property_key] = {
-                                'number': released_episodes
-                            }
-                            has_changes = True
+                    property_key = self._get_property_key(self.property_mapping['released_episodes_property_id'])
+                    if property_key:
+                        properties[property_key] = {
+                            'number': released_episodes
+                        }
             
             # Next Episode Air Date (TV shows)
-            if should_update_property('next_episode_property_id') and content_type == 'tv' and self.property_mapping['next_episode_property_id']:
+            if content_type == 'tv' and self.property_mapping['next_episode_property_id']:
                 next_episode = tmdb_data.get('next_episode_to_air')
-                next_air_date = None
-                
                 if next_episode and next_episode.get('air_date'):
-                    next_air_date = next_episode['air_date']
-                
-                # Update if we found next episode air date data
-                if next_air_date is not None:
-                    current_next_episode = current_data.get('next_episode_property_id')
-                    if current_next_episode != next_air_date:
-                        property_key = self._get_property_key(self.property_mapping['next_episode_property_id'])
-                        if property_key:
-                            new_properties[property_key] = {
-                                'date': {'start': next_air_date}
-                            }
-                            has_changes = True
-                elif current_data.get('next_episode_property_id') is not None:
-                    # Clear the field if no next episode data is available
                     property_key = self._get_property_key(self.property_mapping['next_episode_property_id'])
                     if property_key:
-                        new_properties[property_key] = {
-                            'date': None
+                        properties[property_key] = {
+                            'date': {'start': next_episode['air_date']}
                         }
-                        has_changes = True
             
-            # Cast
-            if tmdb_data.get('credits', {}).get('cast') and self.property_mapping['cast_property_id']:
-                behavior = self.field_behavior.get('cast_property_id', 'default')
-                tmdb_cast = [person['name'] for person in tmdb_data['credits']['cast'][:5]]
-                current_cast = current_data.get('cast_property_id', [])
-                
-                result_cast = self._handle_field_behavior(tmdb_cast, current_cast, 'cast', behavior)
-                
-                if result_cast is not None and set(current_cast) != set(result_cast):
-                    property_key = self._get_property_key(self.property_mapping['cast_property_id'])
-                    if property_key:
-                        cast_options = build_multi_select_options(result_cast, context='cast')
-                        new_properties[property_key] = {'multi_select': cast_options}
-                        has_changes = True
-            
-            # Director(s) (Movies only - TV shows use creators)
-            if content_type == 'movie' and tmdb_data.get('credits', {}).get('crew') and self.property_mapping['director_property_id']:
-                behavior = self.field_behavior.get('director_property_id', 'default')
-                tmdb_directors = [person['name'] for person in tmdb_data['credits']['crew'] if person['job'] == 'Director'][:3]
-                current_directors = current_data.get('director_property_id', [])
-                
-                result_directors = self._handle_field_behavior(tmdb_directors, current_directors, 'directors', behavior)
-                
-                if result_directors is not None and set(current_directors) != set(result_directors):
-                    property_key = self._get_property_key(self.property_mapping['director_property_id'])
-                    if property_key:
-                        director_options = build_multi_select_options(result_directors, context='directors')
-                        new_properties[property_key] = {'multi_select': director_options}
-                        has_changes = True
-            
-            # Creator(s) (TV shows) - Show creators/showrunners
-            if content_type == 'tv' and self.property_mapping['creator_property_id']:
-                behavior = self.field_behavior.get('creator_property_id', 'default')
-                tmdb_creators = []
-                if tmdb_data.get('created_by'):
-                    tmdb_creators = [creator['name'] for creator in tmdb_data['created_by'][:5]]
-                
-                current_creators = current_data.get('creator_property_id', [])
-                result_creators = self._handle_field_behavior(tmdb_creators, current_creators, 'creators', behavior)
-                
-                if result_creators is not None and set(current_creators) != set(result_creators):
-                    property_key = self._get_property_key(self.property_mapping['creator_property_id'])
-                    if property_key:
-                        creator_options = build_multi_select_options(result_creators, context='creators')
-                        new_properties[property_key] = {'multi_select': creator_options}
-                        has_changes = True
-            
-            # Production Companies
-            if tmdb_data.get('production_companies') and self.property_mapping['production_companies_property_id']:
-                behavior = self.field_behavior.get('production_companies_property_id', 'default')
-                tmdb_companies = [company['name'] for company in tmdb_data['production_companies'][:5]]
-                current_companies = current_data.get('production_companies_property_id', [])
-                
-                result_companies = self._handle_field_behavior(tmdb_companies, current_companies, 'production companies', behavior)
-                
-                if result_companies is not None and set(current_companies) != set(result_companies):
-                    property_key = self._get_property_key(self.property_mapping['production_companies_property_id'])
-                    if property_key:
-                        company_options = build_multi_select_options(result_companies, context='production_companies')
-                        new_properties[property_key] = {'multi_select': company_options}
-                        has_changes = True
+            # Website
+            if tmdb_data.get('homepage') and self.property_mapping['website_property_id']:
+                property_key = self._get_property_key(self.property_mapping['website_property_id'])
+                if property_key:
+                    properties[property_key] = {
+                        'url': tmdb_data['homepage']
+                    }
             
             # TMDb Homepage
             if tmdb_data.get('id') and self.property_mapping['homepage_property_id']:
-                new_homepage = f"https://www.themoviedb.org/{content_type}/{tmdb_data['id']}"
-                current_homepage = current_data.get('homepage_property_id')
-                if current_homepage != new_homepage:
-                    property_key = self._get_property_key(self.property_mapping['homepage_property_id'])
+                tmdb_url = f"https://www.themoviedb.org/{content_type}/{tmdb_data['id']}"
+                property_key = self._get_property_key(self.property_mapping['homepage_property_id'])
+                if property_key:
+                    properties[property_key] = {
+                        'url': tmdb_url
+                    }
+            
+            # Cast (top 5 cast members)
+            if tmdb_data.get('credits', {}).get('cast') and self.property_mapping['cast_property_id']:
+                cast = tmdb_data['credits']['cast'][:5]
+                cast_names = [person['name'] for person in cast]
+                property_key = self._get_property_key(self.property_mapping['cast_property_id'])
+                if property_key:
+                    cast_options = build_multi_select_options(cast_names, context='cast')
+                    properties[property_key] = {'multi_select': cast_options}
+            
+            # Director(s)
+            if tmdb_data.get('credits', {}).get('crew') and self.property_mapping['director_property_id']:
+                directors = [person for person in tmdb_data['credits']['crew'] if person['job'] == 'Director']
+                director_names = [person['name'] for person in directors[:3]]
+                if director_names:
+                    property_key = self._get_property_key(self.property_mapping['director_property_id'])
                     if property_key:
-                        new_properties[property_key] = {
-                            'url': new_homepage
-                        }
-                        has_changes = True
+                        director_options = build_multi_select_options(director_names, context='directors')
+                        properties[property_key] = {'multi_select': director_options}
+            
+            # Creator(s) (TV shows)
+            if content_type == 'tv' and tmdb_data.get('created_by') and self.property_mapping['creator_property_id']:
+                creators = tmdb_data['created_by']
+                creator_names = [creator['name'] for creator in creators[:5]]
+                if creator_names:
+                    property_key = self._get_property_key(self.property_mapping['creator_property_id'])
+                    if property_key:
+                        creator_options = build_multi_select_options(creator_names, context='creators')
+                        properties[property_key] = {'multi_select': creator_options}
+            
+            # Production Companies
+            if tmdb_data.get('production_companies') and self.property_mapping['production_companies_property_id']:
+                companies = [company['name'] for company in tmdb_data['production_companies'][:5]]
+                property_key = self._get_property_key(self.property_mapping['production_companies_property_id'])
+                if property_key:
+                    company_options = build_multi_select_options(companies, context='production_companies')
+                    properties[property_key] = {'multi_select': company_options}
+            
+            # Budget
+            if tmdb_data.get('budget') and self.property_mapping['budget_property_id']:
+                property_key = self._get_property_key(self.property_mapping['budget_property_id'])
+                if property_key:
+                    properties[property_key] = {
+                        'number': tmdb_data['budget']
+                    }
+            
+            # Revenue
+            if tmdb_data.get('revenue') and self.property_mapping['revenue_property_id']:
+                property_key = self._get_property_key(self.property_mapping['revenue_property_id'])
+                if property_key:
+                    properties[property_key] = {
+                        'number': tmdb_data['revenue']
+                    }
+            
+            # Original Language
+            if tmdb_data.get('original_language') and self.property_mapping['original_language_property_id']:
+                property_key = self._get_property_key(self.property_mapping['original_language_property_id'])
+                if property_key:
+                    properties[property_key] = {
+                        'select': {'name': tmdb_data['original_language'].upper()}
+                    }
+            
+            # Production Countries
+            if tmdb_data.get('production_countries') and self.property_mapping['production_countries_property_id']:
+                countries = [country['name'] for country in tmdb_data['production_countries'][:5]]
+                property_key = self._get_property_key(self.property_mapping['production_countries_property_id'])
+                if property_key:
+                    country_options = build_multi_select_options(countries, context='production_countries')
+                    properties[property_key] = {'multi_select': country_options}
             
             # Tagline
             if tmdb_data.get('tagline') and self.property_mapping['tagline_property_id']:
-                current_tagline = current_data.get('tagline_property_id')
-                if current_tagline != tmdb_data['tagline']:
-                    property_key = self._get_property_key(self.property_mapping['tagline_property_id'])
-                    if property_key:
-                        new_properties[property_key] = {
-                            'rich_text': [{'text': {'content': tmdb_data['tagline']}}]
-                        }
-                        has_changes = True
+                property_key = self._get_property_key(self.property_mapping['tagline_property_id'])
+                if property_key:
+                    properties[property_key] = {
+                        'rich_text': [{'text': {'content': tmdb_data['tagline']}}]
+                    }
             
-            # Watch Providers (using TMDb)
-            if should_update_property('watch_providers_property_id') and self.property_mapping['watch_providers_property_id'] and tmdb_data.get('id'):
-                # Get watch providers from TMDb
+            # Popularity
+            if tmdb_data.get('popularity') and self.property_mapping['popularity_property_id']:
+                property_key = self._get_property_key(self.property_mapping['popularity_property_id'])
+                if property_key:
+                    properties[property_key] = {
+                        'number': tmdb_data['popularity']
+                    }
+            
+            # Adult Content
+            if tmdb_data.get('adult') and self.property_mapping['adult_content_property_id']:
+                property_key = self._get_property_key(self.property_mapping['adult_content_property_id'])
+                if property_key:
+                    properties[property_key] = {
+                        'checkbox': tmdb_data['adult']
+                    }
+            
+            # Collection (Movies only)
+            if content_type == 'movie' and tmdb_data.get('belongs_to_collection') and self.property_mapping['collection_property_id']:
+                collection = tmdb_data['belongs_to_collection']
+                if collection and collection.get('name'):
+                    property_key = self._get_property_key(self.property_mapping['collection_property_id'])
+                    if property_key:
+                        collection_options = build_multi_select_options([collection['name']], context='collection')
+                        properties[property_key] = {'multi_select': collection_options}
+            
+            # Watch Providers
+            if self.property_mapping['watch_providers_property_id'] and tmdb_data.get('id'):
                 watch_providers_data = self.tmdb.get_watch_providers(content_type, tmdb_data['id'])
                 if watch_providers_data:
                     us_providers = watch_providers_data.get('results', {}).get('US', {})
                     new_providers = []
-                    
-                    # Extract providers from flatrate, free, and ads categories
                     for category in ['flatrate', 'free', 'ads']:
                         providers = us_providers.get(category, [])
                         for provider in providers:
                             provider_name = provider.get('provider_name', 'Unknown')
-                            # Normalize provider name to condense similar services
                             normalized_name = self.tmdb.normalize_provider_name(provider_name)
                             new_providers.append(normalized_name)
-                    
-                    # Remove duplicates and limit to top 10
                     new_providers = list(dict.fromkeys(new_providers))[:10]
-                    current_providers = current_data.get('watch_providers_property_id', [])
-                    
-                    if set(current_providers) != set(new_providers):
+                    if new_providers:
                         property_key = self._get_property_key(self.property_mapping['watch_providers_property_id'])
                         if property_key:
                             provider_options = build_multi_select_options(new_providers, context='watch_providers')
-                            new_properties[property_key] = {'multi_select': provider_options}
-                            has_changes = True
-            
-            # Original Language
-            if tmdb_data.get('original_language') and self.property_mapping['original_language_property_id']:
-                current_language = current_data.get('original_language_property_id')
-                tmdb_language = tmdb_data['original_language'].upper()
-                
-                if current_language != tmdb_language:
-                    property_key = self._get_property_key(self.property_mapping['original_language_property_id'])
-                    if property_key:
-                        new_properties[property_key] = {
-                            'select': {'name': tmdb_language}
-                        }
-                        has_changes = True
-            
-            # Production Countries
-            if tmdb_data.get('production_countries') and self.property_mapping['production_countries_property_id']:
-                tmdb_countries = [country['name'] for country in tmdb_data['production_countries'][:5]]  # Top 5 countries
-                current_countries = current_data.get('production_countries_property_id', [])
-                
-                if set(current_countries) != set(tmdb_countries):
-                    property_key = self._get_property_key(self.property_mapping['production_countries_property_id'])
-                    if property_key:
-                        country_options = build_multi_select_options(tmdb_countries, context='production_countries')
-                        new_properties[property_key] = {'multi_select': country_options}
-                        has_changes = True
-            
-            # Collection (Movies only)
-            if content_type == 'movie' and tmdb_data.get('belongs_to_collection') and self.property_mapping['collection_property_id']:
-                behavior = self.field_behavior.get('collection_property_id', 'default')
-                collection = tmdb_data['belongs_to_collection']
-                tmdb_collections = [collection['name']] if collection and collection.get('name') else []
-                current_collections = current_data.get('collection_property_id', [])
-                
-                result_collections = self._handle_field_behavior(tmdb_collections, current_collections, 'collection', behavior)
-                
-                if result_collections is not None and set(current_collections) != set(result_collections):
-                    property_key = self._get_property_key(self.property_mapping['collection_property_id'])
-                    if property_key:
-                        collection_options = build_multi_select_options(result_collections, context='collection')
-                        new_properties[property_key] = {'multi_select': collection_options}
-                        has_changes = True
-            
-            # Rating
-            if should_update_property('rating_property_id') and tmdb_data.get('vote_average') is not None and self.property_mapping['rating_property_id']:
-                current_rating = current_data.get('rating_property_id')
-                tmdb_rating = tmdb_data['vote_average']
-                
-                if current_rating != tmdb_rating:
-                    property_key = self._get_property_key(self.property_mapping['rating_property_id'])
-                    if property_key:
-                        new_properties[property_key] = {
-                            'number': tmdb_rating
-                        }
-                        has_changes = True
-            
-            return has_changes
+                            properties[property_key] = {'multi_select': provider_options}
             
         except Exception as e:
-            logger.error(f"Error comparing extended properties: {e}")
-            return has_changes
+            logger.error(f"Error formatting properties: {e}")
+        
+        return properties
+    
+    def _filter_properties_by_update_only(self, properties: Dict, update_only: List[str]) -> Dict:
+        """Filter properties to only those specified in update_only list."""
+        # Map friendly names to property IDs
+        name_to_id_map = {
+            'title': self.property_mapping.get('title_property_id'),
+            'description': self.property_mapping.get('description_property_id'),
+            'release_date': self.property_mapping.get('release_date_property_id'),
+            'genres': self.property_mapping.get('genres_property_id'),
+            'status': self.property_mapping.get('status_property_id'),
+            'rating': self.property_mapping.get('rating_property_id'),
+            'tmdb_id': self.property_mapping.get('tmdb_id_property_id'),
+            'runtime': self.property_mapping.get('runtime_minutes_property_id'),
+            'seasons': self.property_mapping.get('seasons_property_id'),
+            'content_type': self.property_mapping.get('content_type_property_id'),
+            'episodes': self.property_mapping.get('episodes_property_id'),
+            'released_episodes': self.property_mapping.get('released_episodes_property_id'),
+            'next_episode': self.property_mapping.get('next_episode_property_id'),
+            'website': self.property_mapping.get('website_property_id'),
+            'homepage': self.property_mapping.get('homepage_property_id'),
+            'cast': self.property_mapping.get('cast_property_id'),
+            'director': self.property_mapping.get('director_property_id'),
+            'creator': self.property_mapping.get('creator_property_id'),
+            'production_companies': self.property_mapping.get('production_companies_property_id'),
+            'budget': self.property_mapping.get('budget_property_id'),
+            'revenue': self.property_mapping.get('revenue_property_id'),
+            'original_language': self.property_mapping.get('original_language_property_id'),
+            'production_countries': self.property_mapping.get('production_countries_property_id'),
+            'tagline': self.property_mapping.get('tagline_property_id'),
+            'popularity': self.property_mapping.get('popularity_property_id'),
+            'adult_content': self.property_mapping.get('adult_content_property_id'),
+            'collection': self.property_mapping.get('collection_property_id'),
+            'watch_providers': self.property_mapping.get('watch_providers_property_id'),
+        }
+        
+        # Get property IDs for the specified update_only fields
+        allowed_property_ids = []
+        for field_name in update_only:
+            prop_id = name_to_id_map.get(field_name)
+            if prop_id:
+                allowed_property_ids.append(prop_id)
+        
+        # Filter properties to only those in allowed list
+        filtered = {}
+        for prop_key, prop_value in properties.items():
+            # Check if this property matches any allowed property ID
+            for allowed_id in allowed_property_ids:
+                allowed_key = self._get_property_key(allowed_id)
+                if allowed_key and prop_key == allowed_key:
+                    filtered[prop_key] = prop_value
+                    break
+        
+        return filtered
     
     def _handle_field_behavior(self, tmdb_data: List[str], current_data: List[str], field_name: str, behavior: str) -> Optional[List[str]]:
         """Handle field behavior based on configuration."""
@@ -1085,224 +923,6 @@ class NotionTMDbSync:
         """Get the property key for a given property ID."""
         return self.property_id_to_key.get(property_id)
     
-    def _format_extended_properties(self, tmdb_data: Dict, content_type: str, properties: Dict):
-        """Format extended TMDb properties."""
-        try:
-            # Episodes (TV shows) - Total planned episodes (including future seasons)
-            if content_type == 'tv' and tmdb_data.get('number_of_episodes') and self.property_mapping['episodes_property_id']:
-                property_key = self._get_property_key(self.property_mapping['episodes_property_id'])
-                if property_key:
-                    properties[property_key] = {
-                        'number': tmdb_data['number_of_episodes']
-                    }
-            
-            # Released Episodes (TV shows) - Last episode number that has aired
-            if content_type == 'tv' and self.property_mapping['released_episodes_property_id']:
-                released_episodes = None
-                
-                # Use last_episode_to_air to get the actual last aired episode
-                last_episode = tmdb_data.get('last_episode_to_air')
-                if last_episode and last_episode.get('episode_number') and last_episode.get('season_number'):
-                    # Calculate cumulative episode number across all seasons
-                    seasons = tmdb_data.get('seasons', [])
-                    if seasons:
-                        cumulative_episodes = 0
-                        last_season = last_episode.get('season_number', 0)
-                        
-                        # Sum episodes from all seasons up to and including the last aired season
-                        for season in seasons:
-                            season_number = season.get('season_number', 0)
-                            if season_number > 0 and season_number < last_season:
-                                # For completed seasons, count all episodes
-                                if season.get('air_date'):
-                                    cumulative_episodes += season.get('episode_count', 0)
-                            elif season_number == last_season:
-                                # For the last aired season, only count up to the last aired episode
-                                cumulative_episodes += last_episode.get('episode_number', 0)
-                                break
-                        
-                        if cumulative_episodes > 0:
-                            released_episodes = cumulative_episodes
-                
-                # Set property if we found released episodes data
-                if released_episodes is not None:
-                    property_key = self._get_property_key(self.property_mapping['released_episodes_property_id'])
-                    if property_key:
-                        properties[property_key] = {
-                            'number': released_episodes
-                        }
-            
-            # Next Episode Air Date (TV shows)
-            if content_type == 'tv' and self.property_mapping['next_episode_property_id']:
-                next_episode = tmdb_data.get('next_episode_to_air')
-                if next_episode and next_episode.get('air_date'):
-                    property_key = self._get_property_key(self.property_mapping['next_episode_property_id'])
-                    if property_key:
-                        properties[property_key] = {
-                            'date': {'start': next_episode['air_date']}
-                        }
-            
-            # Website
-            if tmdb_data.get('homepage') and self.property_mapping['website_property_id']:
-                property_key = self._get_property_key(self.property_mapping['website_property_id'])
-                if property_key:
-                    properties[property_key] = {
-                        'url': tmdb_data['homepage']
-                    }
-            
-            # TMDb Homepage
-            if tmdb_data.get('id') and self.property_mapping['homepage_property_id']:
-                tmdb_url = f"https://www.themoviedb.org/{content_type}/{tmdb_data['id']}"
-                property_key = self._get_property_key(self.property_mapping['homepage_property_id'])
-                if property_key:
-                    properties[property_key] = {
-                        'url': tmdb_url
-                    }
-            
-            # Cast (top 5 cast members)
-            if tmdb_data.get('credits', {}).get('cast') and self.property_mapping['cast_property_id']:
-                cast = tmdb_data['credits']['cast'][:5]  # Top 5 cast members
-                cast_names = [person['name'] for person in cast]
-                property_key = self._get_property_key(self.property_mapping['cast_property_id'])
-                if property_key:
-                    cast_options = build_multi_select_options(cast_names, context='cast')
-                    properties[property_key] = {'multi_select': cast_options}
-            
-            # Director(s)
-            if tmdb_data.get('credits', {}).get('crew') and self.property_mapping['director_property_id']:
-                directors = [person for person in tmdb_data['credits']['crew'] if person['job'] == 'Director']
-                director_names = [person['name'] for person in directors[:3]]  # Top 3 directors
-                if director_names:
-                    property_key = self._get_property_key(self.property_mapping['director_property_id'])
-                    if property_key:
-                        director_options = build_multi_select_options(director_names, context='directors')
-                        properties[property_key] = {'multi_select': director_options}
-            
-            # Creator(s) (TV shows) - Show creators/showrunners
-            if content_type == 'tv' and tmdb_data.get('created_by') and self.property_mapping['creator_property_id']:
-                creators = tmdb_data['created_by']
-                creator_names = [creator['name'] for creator in creators[:5]]  # Top 5 creators
-                if creator_names:
-                    property_key = self._get_property_key(self.property_mapping['creator_property_id'])
-                    if property_key:
-                        creator_options = build_multi_select_options(creator_names, context='creators')
-                        properties[property_key] = {'multi_select': creator_options}
-            
-            # Production Companies
-            if tmdb_data.get('production_companies') and self.property_mapping['production_companies_property_id']:
-                companies = [company['name'] for company in tmdb_data['production_companies'][:5]]  # Top 5 companies
-                property_key = self._get_property_key(self.property_mapping['production_companies_property_id'])
-                if property_key:
-                    company_options = build_multi_select_options(companies, context='production_companies')
-                    properties[property_key] = {'multi_select': company_options}
-            
-            # Budget
-            if tmdb_data.get('budget') and self.property_mapping['budget_property_id']:
-                property_key = self._get_property_key(self.property_mapping['budget_property_id'])
-                if property_key:
-                    properties[property_key] = {
-                        'number': tmdb_data['budget']
-                    }
-            
-            # Revenue
-            if tmdb_data.get('revenue') and self.property_mapping['revenue_property_id']:
-                property_key = self._get_property_key(self.property_mapping['revenue_property_id'])
-                if property_key:
-                    properties[property_key] = {
-                        'number': tmdb_data['revenue']
-                    }
-            
-            # Original Language
-            if tmdb_data.get('original_language') and self.property_mapping['original_language_property_id']:
-                property_key = self._get_property_key(self.property_mapping['original_language_property_id'])
-                if property_key:
-                    properties[property_key] = {
-                        'select': {'name': tmdb_data['original_language'].upper()}
-                    }
-            
-            # Production Countries
-            if tmdb_data.get('production_countries') and self.property_mapping['production_countries_property_id']:
-                countries = [country['name'] for country in tmdb_data['production_countries'][:5]]  # Top 5 countries
-                property_key = self._get_property_key(self.property_mapping['production_countries_property_id'])
-                if property_key:
-                    country_options = build_multi_select_options(countries, context='production_countries')
-                    properties[property_key] = {'multi_select': country_options}
-            
-            # Tagline
-            if tmdb_data.get('tagline') and self.property_mapping['tagline_property_id']:
-                property_key = self._get_property_key(self.property_mapping['tagline_property_id'])
-                if property_key:
-                    properties[property_key] = {
-                        'rich_text': [{'text': {'content': tmdb_data['tagline']}}]
-                    }
-            
-            # Popularity
-            if tmdb_data.get('popularity') and self.property_mapping['popularity_property_id']:
-                property_key = self._get_property_key(self.property_mapping['popularity_property_id'])
-                if property_key:
-                    properties[property_key] = {
-                        'number': tmdb_data['popularity']
-                    }
-            
-            # Runtime in Minutes
-            if tmdb_data.get('runtime') and self.property_mapping['runtime_minutes_property_id']:
-                property_key = self._get_property_key(self.property_mapping['runtime_minutes_property_id'])
-                if property_key:
-                    properties[property_key] = {
-                        'number': tmdb_data['runtime']
-                    }
-            
-            # Adult Content
-            if tmdb_data.get('adult') and self.property_mapping['adult_content_property_id']:
-                property_key = self._get_property_key(self.property_mapping['adult_content_property_id'])
-                if property_key:
-                    properties[property_key] = {
-                        'checkbox': tmdb_data['adult']
-                    }
-            
-            # Collection (Movies only)
-            if content_type == 'movie' and tmdb_data.get('belongs_to_collection') and self.property_mapping['collection_property_id']:
-                collection = tmdb_data['belongs_to_collection']
-                if collection and collection.get('name'):
-                    property_key = self._get_property_key(self.property_mapping['collection_property_id'])
-                    if property_key:
-                        collection_options = build_multi_select_options([collection['name']], context='collection')
-                        properties[property_key] = {'multi_select': collection_options}
-            
-            # Watch Providers (using TMDb)
-            if self.property_mapping['watch_providers_property_id'] and tmdb_data.get('id'):
-                # Get watch providers from TMDb
-                watch_providers_data = self.tmdb.get_watch_providers(content_type, tmdb_data['id'])
-                if watch_providers_data:
-                    us_providers = watch_providers_data.get('results', {}).get('US', {})
-                    new_providers = []
-                    
-                    # Extract providers from flatrate, free, and ads categories
-                    for category in ['flatrate', 'free', 'ads']:
-                        providers = us_providers.get(category, [])
-                        for provider in providers:
-                            provider_name = provider.get('provider_name', 'Unknown')
-                            # Normalize provider name to condense similar services
-                            normalized_name = self.tmdb.normalize_provider_name(provider_name)
-                            new_providers.append(normalized_name)
-                    
-                    # Remove duplicates and limit to top 10
-                    new_providers = list(dict.fromkeys(new_providers))[:10]
-                    
-                    # Set watch providers if we found any
-                    if new_providers:
-                        property_key = self._get_property_key(self.property_mapping['watch_providers_property_id'])
-                        if property_key:
-                            provider_options = build_multi_select_options(new_providers, context='watch_providers')
-                            properties[property_key] = {'multi_select': provider_options}
-            
-        except Exception as e:
-            logger.error(f"Error formatting extended properties: {e}")
-    
-    def _get_property_key(self, property_id: str) -> Optional[str]:
-        """Get the property key for a given property ID."""
-        return self.property_id_to_key.get(property_id)
-    
     def _find_existing_page_by_tmdb_id(self, tmdb_id: int) -> Optional[str]:
         """Search for existing page by TMDB ID in the Notion database."""
         try:
@@ -1340,9 +960,8 @@ class NotionTMDbSync:
                     'message': f'Could not fetch movie details for ID {tmdb_id}'
                 }
             
-            # Format ALL properties for initial page creation (core + extended)
-            # Pass empty current_data since this is a new page
-            properties, _ = self.compare_and_format_properties({}, details, 'movie', None)
+            # Format all properties for initial page creation
+            properties = self.format_all_properties(details, 'movie')
             
             # Create the page with DNS=True to prevent automation cascade
             title = details.get('title', 'Untitled Movie')
@@ -1401,9 +1020,8 @@ class NotionTMDbSync:
                     'message': f'Could not fetch TV show details for ID {tmdb_id}'
                 }
             
-            # Format ALL properties for initial page creation (core + extended)
-            # Pass empty current_data since this is a new page
-            properties, _ = self.compare_and_format_properties({}, details, 'tv', None)
+            # Format all properties for initial page creation
+            properties = self.format_all_properties(details, 'tv')
             
             # Create the page with DNS=True to prevent automation cascade
             title = details.get('name', 'Untitled TV Show')
@@ -1602,8 +1220,22 @@ class NotionTMDbSync:
                         self._ensure_content_type_property(page_id, content_type)
                     return True  # Skip but don't count as failed
             
-            # Compare current data with TMDb data and get only changed properties
-            new_properties, has_changes = self.compare_and_format_properties(current_data, details, content_type, update_only=update_only)
+            # Format all properties
+            properties = self.format_all_properties(details, content_type)
+            
+            # Filter by update_only if specified
+            if update_only:
+                properties = self._filter_properties_by_update_only(properties, update_only)
+            
+            # Get page properties for comparison
+            page_properties = page.get('properties', {})
+            
+            # Check for changes using shared utility
+            changes_detected, change_details = has_property_changes(
+                page_properties,
+                properties,
+                self._get_property_key(self.property_mapping.get('last_updated_property_id'))
+            )
             
             # Check if cover needs updating (only if no cover exists)
             new_cover_url = None
@@ -1619,7 +1251,7 @@ class NotionTMDbSync:
             cover_changed = new_cover_url is not None
             
             # Only update if there are changes (or if forcing icon updates)
-            if not has_changes and not cover_changed and not force_icons:
+            if not changes_detected and not cover_changed and not force_icons:
                 logger.info(f"No changes detected for: {title}")
                 if type_missing:
                     self._ensure_content_type_property(page_id, content_type)
@@ -1633,8 +1265,8 @@ class NotionTMDbSync:
                 icon = '📺'  # Television emoji
             
             # Update the page with only changed properties (or force icon update)
-            if self.notion.update_page(page_id, new_properties, new_cover_url if cover_changed else None, icon):
-                change_count = len(new_properties)
+            if self.notion.update_page(page_id, properties, new_cover_url if cover_changed else None, icon):
+                change_count = len(properties)
                 change_text = f"{change_count} properties" if change_count > 1 else f"{change_count} property"
                 cover_text = " + cover" if cover_changed else ""
                 
@@ -1644,7 +1276,7 @@ class NotionTMDbSync:
                     icon_text = f" + icon ({icon})"
                 
                 # Special message for force icons mode
-                if force_icons and not has_changes and not cover_changed:
+                if force_icons and not changes_detected and not cover_changed:
                     logger.info(f"Forced icon update: {title}{icon_text}")
                 else:
                     logger.info(f"Successfully updated: {title} ({change_text}{cover_text}{icon_text})")

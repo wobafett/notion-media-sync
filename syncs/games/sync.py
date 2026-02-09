@@ -1143,7 +1143,7 @@ class NotionIGDbSync:
                     game_data = detailed_data
             
             # Format properties for Notion
-            properties = self.format_notion_properties(game_data)
+            properties = self.format_all_properties(game_data)
             
             # Merge multi-select properties based on FIELD_BEHAVIOR config
             property_mappings = {}
@@ -1207,8 +1207,8 @@ class NotionIGDbSync:
             logger.error(f"Error syncing page {page.get('id')}: {e}")
             return False
     
-    def format_notion_properties(self, game_data: Dict) -> Dict:
-        """Format IGDb data for Notion properties."""
+    def format_all_properties(self, game_data: Dict) -> Dict:
+        """Format all IGDb properties for Notion."""
         properties = {}
         
         try:
@@ -1283,17 +1283,7 @@ class NotionIGDbSync:
                         }
             
             
-            # Extended properties
-            self._format_extended_properties(game_data, properties)
-            
-        except Exception as e:
-            logger.error(f"Error formatting properties: {e}")
-        
-        return properties
-    
-    def _format_extended_properties(self, game_data: Dict, properties: Dict):
-        """Format extended IGDb properties."""
-        try:
+            # Genres (multi-select)
             # Genres
             if game_data.get('genres') and self.property_mapping['genres_property_id']:
                 genre_names = self.igdb.get_genre_names(game_data['genres'])
@@ -1517,7 +1507,9 @@ class NotionIGDbSync:
                     }
             
         except Exception as e:
-            logger.error(f"Error formatting extended properties: {e}")
+            logger.error(f"Error formatting properties: {e}")
+        
+        return properties
     
     def _get_property_key(self, property_id: str) -> Optional[str]:
         """Get the property key for a given property ID."""
