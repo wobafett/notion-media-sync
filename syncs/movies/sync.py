@@ -673,8 +673,10 @@ class NotionTMDbSync:
                 if season_ep_map:
                     property_key = self._get_property_key(self.property_mapping['season_episodes_property_id'])
                     if property_key:
+                        # Sort the dict by numeric key order (not alphabetic)
+                        sorted_season_map = {str(k): season_ep_map[str(k)] for k in sorted([int(x) for x in season_ep_map.keys()])}
                         properties[property_key] = {
-                            'rich_text': [{'text': {'content': json.dumps(season_ep_map, sort_keys=True)}}]
+                            'rich_text': [{'text': {'content': json.dumps(sorted_season_map)}}]
                         }
             
             # Latest Episode Display (TV shows) - Human-readable "S3E5" format
