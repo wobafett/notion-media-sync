@@ -287,6 +287,36 @@ class NotionAPI:
         except Exception as e:
             logger.error(f"Error updating page {page_id}: {e}")
             return False
+    
+    def create_page(self, database_id: str, properties: Dict, cover_url: Optional[str] = None, icon: Optional[str] = None) -> Optional[str]:
+        """Create a new page in a database."""
+        try:
+            page_data = {
+                'parent': {'database_id': database_id},
+                'properties': properties
+            }
+            
+            # Set cover image if provided
+            if cover_url:
+                page_data['cover'] = {
+                    'type': 'external',
+                    'external': {
+                        'url': cover_url
+                    }
+                }
+            
+            # Set page icon if provided
+            if icon:
+                page_data['icon'] = {
+                    'type': 'emoji',
+                    'emoji': icon
+                }
+            
+            response = self.client.pages.create(**page_data)
+            return response['id']
+        except Exception as e:
+            logger.error(f"Error creating page: {e}")
+            return None
 
 class NotionTMDbSync:
     """Main class for synchronizing Notion database with TMDb data."""
@@ -382,6 +412,34 @@ class NotionTMDbSync:
         except Exception as e:
             logger.error(f"Error loading database schema: {e}")
             self.property_mapping = {}
+    
+    def _parse_tmdb_url(self, url: str) -> Optional[Dict[str, str]]:
+        """
+        Parse TMDB URL and extract type + ID.
+        
+        Supports formats:
+        - https://www.themoviedb.org/movie/550
+        - https://www.themoviedb.org/tv/1399
+        - https://www.themoviedb.org/movie/550-fight-club (with slug)
+        
+        Returns: {"type": "movie"|"tv", "id": "550"} or None
+        """
+        import re
+        
+        if not url:
+            return None
+        
+        # Pattern: themoviedb.org/(movie|tv)/(\d+)
+        pattern = r'themoviedb\.org/(movie|tv)/(\d+)'
+        match = re.search(pattern, url)
+        
+        if match:
+            content_type = match.group(1)  # "movie" or "tv"
+            tmdb_id = match.group(2)  # numeric ID
+            return {"type": content_type, "id": tmdb_id}
+        
+        logger.warning(f"Unable to parse TMDB URL: {url}")
+        return None
     
     def get_notion_pages(self, status_filter: Optional[str] = None, created_after: Optional[str] = None) -> List[Dict]:
         """Get all pages from the Notion database, optionally filtered by status and/or creation date."""
@@ -1351,6 +1409,212 @@ class NotionTMDbSync:
         """Get the property key for a given property ID."""
         return self.property_id_to_key.get(property_id)
     
+    def _find_existing_page_by_tmdb_id(self, tmdb_id: int) -> Optional[str]:
+        """Search for existing page by TMDB ID in the Notion database."""
+        try:
+            tmdb_id_property_id = self.property_mapping.get('tmdb_id_property_id')
+            if not tmdb_id_property_id:
+                logger.warning("TMDB ID property not configured")
+                return None
+            
+            # Query database for page with matching TMDB ID
+            filter_params = {
+                "property": tmdb_id_property_id,
+                "number": {
+                    "equals": tmdb_id
+                }
+            }
+            
+            pages = self.notion.query_database(self.database_id, filter_params)
+            if pages and len(pages) > 0:
+                return pages[0]['id']
+            
+            return None
+            
+        except Exception as e:
+            logger.debug(f"Error searching for page by TMDB ID {tmdb_id}: {e}")
+            return None
+    
+    def _create_movie_from_tmdb(self, tmdb_data: Dict, tmdb_id: int) -> Dict:
+        """Create a new movie page from TMDB data."""
+        try:
+            # Get movie details with credits and images
+            details = self.tmdb.get_movie_details(tmdb_id)
+            if not details:
+                return {
+                    'success': False,
+                    'message': f'Could not fetch movie details for ID {tmdb_id}'
+                }
+            
+            # Format properties for initial page creation
+            properties = self._format_extended_properties({}, details, 'movie', [])
+            
+            # Create the page with DNS=True to prevent automation cascade
+            title = details.get('title', 'Untitled Movie')
+            
+            # Add DNS checkbox if configured
+            dns_property_id = self.property_mapping.get('dns_property_id')
+            if dns_property_id:
+                property_key = self._get_property_key(dns_property_id)
+                if property_key:
+                    properties[property_key] = {'checkbox': True}
+            
+            # Get cover image URL
+            cover_url = None
+            if details.get('backdrop_path'):
+                cover_url = f"https://image.tmdb.org/t/p/original{details['backdrop_path']}"
+            
+            # Create the page
+            page_id = self.notion.create_page(
+                self.database_id,
+                properties,
+                cover_url,
+                '🎬'  # Movie icon
+            )
+            
+            if not page_id:
+                return {
+                    'success': False,
+                    'message': f'Failed to create page for movie: {title}'
+                }
+            
+            logger.info(f"Created movie page: {title} (ID: {page_id})")
+            
+            return {
+                'success': True,
+                'page_id': page_id,
+                'entity_type': 'movie',
+                'created': True,
+                'message': f'Successfully created movie: {title}'
+            }
+            
+        except Exception as e:
+            logger.error(f"Error creating movie from TMDB: {e}")
+            return {
+                'success': False,
+                'message': f'Error creating movie: {str(e)}'
+            }
+    
+    def _create_tv_from_tmdb(self, tmdb_data: Dict, tmdb_id: int) -> Dict:
+        """Create a new TV show page from TMDB data."""
+        try:
+            # Get TV details with credits and images
+            details = self.tmdb.get_tv_details(tmdb_id)
+            if not details:
+                return {
+                    'success': False,
+                    'message': f'Could not fetch TV show details for ID {tmdb_id}'
+                }
+            
+            # Format properties for initial page creation
+            properties = self._format_extended_properties({}, details, 'tv', [])
+            
+            # Create the page with DNS=True to prevent automation cascade
+            title = details.get('name', 'Untitled TV Show')
+            
+            # Add DNS checkbox if configured
+            dns_property_id = self.property_mapping.get('dns_property_id')
+            if dns_property_id:
+                property_key = self._get_property_key(dns_property_id)
+                if property_key:
+                    properties[property_key] = {'checkbox': True}
+            
+            # Get cover image URL
+            cover_url = None
+            if details.get('backdrop_path'):
+                cover_url = f"https://image.tmdb.org/t/p/original{details['backdrop_path']}"
+            
+            # Create the page
+            page_id = self.notion.create_page(
+                self.database_id,
+                properties,
+                cover_url,
+                '📺'  # TV icon
+            )
+            
+            if not page_id:
+                return {
+                    'success': False,
+                    'message': f'Failed to create page for TV show: {title}'
+                }
+            
+            logger.info(f"Created TV show page: {title} (ID: {page_id})")
+            
+            return {
+                'success': True,
+                'page_id': page_id,
+                'entity_type': 'tv',
+                'created': True,
+                'message': f'Successfully created TV show: {title}'
+            }
+            
+        except Exception as e:
+            logger.error(f"Error creating TV show from TMDB: {e}")
+            return {
+                'success': False,
+                'message': f'Error creating TV show: {str(e)}'
+            }
+    
+    def create_from_tmdb_url(self, tmdb_url: str) -> Dict:
+        """
+        Create a new Notion page from a TMDB URL.
+        
+        Args:
+            tmdb_url: TMDB URL for a movie or TV show
+            
+        Returns:
+            dict with 'success', 'page_id', 'entity_type', 'created', 'message'
+        """
+        logger.info(f"Creating page from TMDB URL: {tmdb_url}")
+        
+        # Parse TMDB URL
+        parsed = self._parse_tmdb_url(tmdb_url)
+        if not parsed:
+            return {
+                'success': False,
+                'message': f'Invalid TMDB URL format: {tmdb_url}'
+            }
+        
+        content_type = parsed['type']  # 'movie' or 'tv'
+        tmdb_id = int(parsed['id'])
+        
+        # Check for existing page by TMDB ID
+        existing_page_id = self._find_existing_page_by_tmdb_id(tmdb_id)
+        if existing_page_id:
+            logger.info(f"{content_type.title()} already exists in Notion (by TMDB ID): {existing_page_id}")
+            return {
+                'success': True,
+                'page_id': existing_page_id,
+                'entity_type': content_type,
+                'created': False,
+                'message': f'{content_type.title()} already exists in database'
+            }
+        
+        # Fetch data from TMDB
+        if content_type == 'movie':
+            tmdb_data = self.tmdb.get_movie_details(tmdb_id)
+            if not tmdb_data:
+                return {
+                    'success': False,
+                    'message': f'Could not fetch movie data from TMDB for ID {tmdb_id}'
+                }
+            return self._create_movie_from_tmdb(tmdb_data, tmdb_id)
+        
+        elif content_type == 'tv':
+            tmdb_data = self.tmdb.get_tv_details(tmdb_id)
+            if not tmdb_data:
+                return {
+                    'success': False,
+                    'message': f'Could not fetch TV show data from TMDB for ID {tmdb_id}'
+                }
+            return self._create_tv_from_tmdb(tmdb_data, tmdb_id)
+        
+        else:
+            return {
+                'success': False,
+                'message': f'Unsupported content type: {content_type}'
+            }
+    
     def sync_page(
         self, 
         page: Dict, 
@@ -1834,9 +2098,16 @@ def run_sync(
     update_only: Optional[str] = None,
     created_after: Optional[str] = None,
     dry_run: bool = False,
+    tmdb_url: Optional[str] = None,
 ) -> Dict:
     """Run the Movies/TV sync with the provided options."""
     enforce_worker_limits(workers)
+
+    # Handle TMDB URL creation mode (no page_id required)
+    if tmdb_url and not page_id:
+        logger.info(f"TMDB URL creation mode: {tmdb_url}")
+        sync = _build_sync_instance()
+        return sync.create_from_tmdb_url(tmdb_url)
 
     if page_id and last_page:
         raise RuntimeError("page-id mode cannot be combined with last-page mode")

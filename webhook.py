@@ -18,13 +18,14 @@ logger = get_logger(__name__)
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Route a single Notion page to the correct sync target")
     parser.add_argument("--page-id", required=False, help="Notion page ID or URL to sync (optional if --url is provided)")
-    parser.add_argument("--url", type=str, help="External URL to create new page from (Spotify or Google Books) - auto-detects type")
+    parser.add_argument("--url", type=str, help="External URL to create new page from (Spotify, Google Books, or TMDB) - auto-detects type")
     parser.add_argument("--force-icons", action="store_true", help="Force update page icons if supported")
     parser.add_argument("--force-update", action="store_true", help="Force update even if already synced")
     parser.add_argument("--comicvine-scrape", action="store_true", help="Books target: force ComicVine scraping")
     parser.add_argument("--dry-run", action="store_true", help="Books target: simulate sync without writing to Notion")
     parser.add_argument("--spotify-url", type=str, help="(Deprecated: use --url) Music target: Spotify URL to create new page")
     parser.add_argument("--google-books-url", type=str, help="(Deprecated: use --url) Books target: Google Books URL to create new page")
+    parser.add_argument("--tmdb-url", type=str, help="(Deprecated: use --url) Movies target: TMDB URL to create new page")
     return parser
 
 
@@ -40,7 +41,7 @@ def main():
     if args.url:
         url_type = detect_url_type(args.url)
         if not url_type:
-            logger.error("Unsupported URL type: %s. Must be Spotify or Google Books URL", args.url)
+            logger.error("Unsupported URL type: %s. Must be Spotify, Google Books, or TMDB URL", args.url)
             sys.exit(1)
         
         # Map to appropriate parameter for backward compatibility
@@ -50,9 +51,12 @@ def main():
         elif url_type == 'google_books':
             args.google_books_url = args.url
             logger.info("Detected Google Books URL: %s", args.url)
+        elif url_type == 'tmdb':
+            args.tmdb_url = args.url
+            logger.info("Detected TMDB URL: %s", args.url)
 
-    # Validation: require either page_id, spotify_url, google_books_url, or url
-    if not args.page_id and not args.spotify_url and not args.google_books_url:
+    # Validation: require either page_id, spotify_url, google_books_url, tmdb_url, or url
+    if not args.page_id and not args.spotify_url and not args.google_books_url and not args.tmdb_url:
         logger.error("Either --page-id or --url must be provided")
         sys.exit(1)
 
@@ -116,6 +120,34 @@ def main():
         logger.error("Failed to create page from Google Books URL: %s", result.get("message", "Unknown error"))
         sys.exit(1)
 
+    # TMDB URL-only mode: create new page from URL
+    if args.tmdb_url and not args.page_id:
+        logger.info("TMDB URL creation mode: %s", args.tmdb_url)
+        target = router.get_target("movies")
+        if not target:
+            logger.error("Movies target not available")
+            sys.exit(1)
+        
+        if not target.validate_environment():
+            sys.exit(1)
+        
+        try:
+            result = target.run_sync(tmdb_url=args.tmdb_url)
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error("TMDB URL creation failed: %s", exc)
+            raise
+        
+        if result.get("success"):
+            logger.info("Successfully created page from TMDB URL")
+            logger.info("Entity: %s | Page ID: %s | Created: %s",
+                        result.get("entity_type", "unknown"),
+                        result.get("page_id", "unknown"),
+                        result.get("created", False))
+            sys.exit(0)
+        
+        logger.error("Failed to create page from TMDB URL: %s", result.get("message", "Unknown error"))
+        sys.exit(1)
+
     # Standard page-specific mode
     notion = NotionAPI(notion_token)
     
@@ -149,6 +181,7 @@ def main():
         "dry_run": args.dry_run,
         "spotify_url": args.spotify_url,
         "google_books_url": args.google_books_url,
+        "tmdb_url": args.tmdb_url,
     }
 
     # Remove None values so adapters don't see extraneous kwargs

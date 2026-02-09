@@ -177,7 +177,7 @@ def find_page_by_property(
 
 def detect_url_type(url: str) -> Optional[str]:
     """
-    Detect URL type and return 'spotify' or 'google_books'.
+    Detect URL type and return 'spotify', 'google_books', or 'tmdb'.
     
     Args:
         url: URL to analyze
@@ -185,6 +185,7 @@ def detect_url_type(url: str) -> Optional[str]:
     Returns:
         'spotify' for Spotify URLs (track/album/artist)
         'google_books' for Google Books edition URLs
+        'tmdb' for TMDB URLs (movie/tv)
         None if URL is not recognized
     
     Example:
@@ -192,6 +193,8 @@ def detect_url_type(url: str) -> Optional[str]:
         'spotify'
         >>> detect_url_type('https://www.google.com/books/edition/Title/abc123')
         'google_books'
+        >>> detect_url_type('https://www.themoviedb.org/movie/550')
+        'tmdb'
     """
     if not url:
         return None
@@ -202,6 +205,8 @@ def detect_url_type(url: str) -> Optional[str]:
         return 'spotify'
     elif 'google.com/books/edition/' in url:
         return 'google_books'
+    elif 'themoviedb.org/' in url and any(x in url for x in ['/movie/', '/tv/']):
+        return 'tmdb'
     
     return None
 
