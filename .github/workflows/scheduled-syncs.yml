@@ -30,7 +30,7 @@ jobs:
             profile_id: "returning_tv"
             target: movies
             status_filter: "Returning Series"
-            update_only: "rating,seasons,total_episodes,latest_episode,next_episode"
+            update_only: "rating,seasons,total_episodes,season_episodes,latest_episode,next_episode"
             schedule: "weekly"
           
           # Monthly 1st: Update released/ended content
