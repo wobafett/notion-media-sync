@@ -1340,9 +1340,9 @@ class NotionTMDbSync:
                     'message': f'Could not fetch movie details for ID {tmdb_id}'
                 }
             
-            # Format properties for initial page creation
-            properties = {}
-            self._format_extended_properties(details, 'movie', properties)
+            # Format ALL properties for initial page creation (core + extended)
+            # Pass empty current_data since this is a new page
+            properties, _ = self.compare_and_format_properties({}, details, 'movie', None)
             
             # Create the page with DNS=True to prevent automation cascade
             title = details.get('title', 'Untitled Movie')
@@ -1401,9 +1401,9 @@ class NotionTMDbSync:
                     'message': f'Could not fetch TV show details for ID {tmdb_id}'
                 }
             
-            # Format properties for initial page creation
-            properties = {}
-            self._format_extended_properties(details, 'tv', properties)
+            # Format ALL properties for initial page creation (core + extended)
+            # Pass empty current_data since this is a new page
+            properties, _ = self.compare_and_format_properties({}, details, 'tv', None)
             
             # Create the page with DNS=True to prevent automation cascade
             title = details.get('name', 'Untitled TV Show')
