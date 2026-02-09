@@ -34,10 +34,16 @@ POPULARITY_PROPERTY_ID = None  # TMDb popularity score (number)
 RUNTIME_MINUTES_PROPERTY_ID = "mIn~"  # Runtime in minutes (number)
 ADULT_CONTENT_PROPERTY_ID = None  # Adult content flag (checkbox)
 WATCH_PROVIDERS_PROPERTY_ID = "wQIc"  # Where to watch (multi-select)
-RELEASED_EPISODES_PROPERTY_ID = "v%3F%7Ci"  # Last released episode number (number)
+RELEASED_EPISODES_PROPERTY_ID = None  # Deprecated - replaced by Latest Episode Display
 NEXT_EPISODE_PROPERTY_ID = "Szt%5B"  # Next episode air date (date)
 COLLECTION_PROPERTY_ID = "TW%5DE"  # Collection (multi-select)
 DNS_PROPERTY_ID = "IvfA"  # DNS (Doesn't Need Sync) checkbox
+
+# Season/Episode Tracking Properties
+SEASON_EPISODES_PROPERTY_ID = "~Pvj"  # JSON of episodes per season: {"1": 8, "2": 8}
+LATEST_EPISODE_DISPLAY_PROPERTY_ID = "v%3F%7Ci"  # Latest aired episode: "S3E5"
+MY_SEASON_PROPERTY_ID = "vD%3CJ"  # User's current season (number, user-managed)
+MY_EPISODE_PROPERTY_ID = "~oOg"  # User's current episode (number, user-managed)
 
 # Field Behavior Configuration
 # Controls how each field is handled during sync
@@ -56,6 +62,10 @@ FIELD_BEHAVIOR = {
     # Fields that only update if TMDb has data
  #   'director_property_id': 'preserve',             # Only update if TMDb has directors
  #   'creator_property_id': 'preserve',             # Only update if TMDb has creators
+    
+    # User-managed fields - never update (preserve user input)
+    'my_season_property_id': 'skip',                # User tracks their current season
+    'my_episode_property_id': 'skip',               # User tracks their current episode
     
     # Fields that always overwrite (default behavior)
     # 'watch_providers_property_id': 'default',     # Always overwrite watch providers

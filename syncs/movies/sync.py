@@ -37,7 +37,9 @@ try:
         ORIGINAL_LANGUAGE_PROPERTY_ID, PRODUCTION_COUNTRIES_PROPERTY_ID,
         TAGLINE_PROPERTY_ID, POPULARITY_PROPERTY_ID, RUNTIME_MINUTES_PROPERTY_ID,
         ADULT_CONTENT_PROPERTY_ID, WATCH_PROVIDERS_PROPERTY_ID, RELEASED_EPISODES_PROPERTY_ID, NEXT_EPISODE_PROPERTY_ID,
-        COLLECTION_PROPERTY_ID, DNS_PROPERTY_ID, FIELD_BEHAVIOR
+        COLLECTION_PROPERTY_ID, DNS_PROPERTY_ID, FIELD_BEHAVIOR,
+        SEASON_EPISODES_PROPERTY_ID, LATEST_EPISODE_DISPLAY_PROPERTY_ID,
+        MY_SEASON_PROPERTY_ID, MY_EPISODE_PROPERTY_ID
     )
 except ImportError:
     logger.error("property_config.py not found. Please create this file with your property IDs.")
@@ -288,6 +290,12 @@ class NotionTMDbSync:
                 'next_episode_property_id': NEXT_EPISODE_PROPERTY_ID,
                 'collection_property_id': COLLECTION_PROPERTY_ID,
                 'dns_property_id': DNS_PROPERTY_ID,
+                
+                # Season/Episode tracking properties
+                'season_episodes_property_id': SEASON_EPISODES_PROPERTY_ID,
+                'latest_episode_display_property_id': LATEST_EPISODE_DISPLAY_PROPERTY_ID,
+                'my_season_property_id': MY_SEASON_PROPERTY_ID,
+                'my_episode_property_id': MY_EPISODE_PROPERTY_ID,
             }
             
             # Log the property mapping (no validation needed - trust the config)
@@ -649,31 +657,41 @@ class NotionTMDbSync:
                         'number': tmdb_data['number_of_episodes']
                     }
             
-            # Released Episodes (TV shows) - Last episode number that has aired
-            if content_type == 'tv' and self.property_mapping['released_episodes_property_id']:
-                released_episodes = None
-                last_episode = tmdb_data.get('last_episode_to_air')
-                if last_episode and last_episode.get('episode_number') and last_episode.get('season_number'):
-                    seasons = tmdb_data.get('seasons', [])
-                    if seasons:
-                        cumulative_episodes = 0
-                        last_season = last_episode.get('season_number', 0)
-                        for season in seasons:
-                            season_number = season.get('season_number', 0)
-                            if season_number > 0 and season_number < last_season:
-                                if season.get('air_date'):
-                                    cumulative_episodes += season.get('episode_count', 0)
-                            elif season_number == last_season:
-                                cumulative_episodes += last_episode.get('episode_number', 0)
-                                break
-                        if cumulative_episodes > 0:
-                            released_episodes = cumulative_episodes
-                if released_episodes is not None:
-                    property_key = self._get_property_key(self.property_mapping['released_episodes_property_id'])
+            # Season Episode Counts JSON (TV shows) - Store per-season episode counts
+            if content_type == 'tv' and tmdb_data.get('seasons') and self.property_mapping.get('season_episodes_property_id'):
+                import json
+                seasons = tmdb_data.get('seasons', [])
+                season_ep_map = {}
+                
+                for season in seasons:
+                    season_num = season.get('season_number', 0)
+                    ep_count = season.get('episode_count', 0)
+                    # Include season 0 (specials) if it has episodes
+                    if season_num >= 0 and ep_count > 0:
+                        season_ep_map[str(season_num)] = ep_count
+                
+                if season_ep_map:
+                    property_key = self._get_property_key(self.property_mapping['season_episodes_property_id'])
                     if property_key:
                         properties[property_key] = {
-                            'number': released_episodes
+                            'rich_text': [{'text': {'content': json.dumps(season_ep_map, sort_keys=True)}}]
                         }
+            
+            # Latest Episode Display (TV shows) - Human-readable "S3E5" format
+            if content_type == 'tv' and self.property_mapping.get('latest_episode_display_property_id'):
+                last_episode = tmdb_data.get('last_episode_to_air')
+                if last_episode:
+                    season_num = last_episode.get('season_number')
+                    episode_num = last_episode.get('episode_number')
+                    
+                    if season_num is not None and episode_num is not None:
+                        # Format as "S3E5"
+                        display_text = f"S{season_num}E{episode_num}"
+                        property_key = self._get_property_key(self.property_mapping['latest_episode_display_property_id'])
+                        if property_key:
+                            properties[property_key] = {
+                                'rich_text': [{'text': {'content': display_text}}]
+                            }
             
             # Next Episode Air Date (TV shows)
             if content_type == 'tv' and self.property_mapping['next_episode_property_id']:
@@ -860,6 +878,10 @@ class NotionTMDbSync:
             'adult_content': self.property_mapping.get('adult_content_property_id'),
             'collection': self.property_mapping.get('collection_property_id'),
             'watch_providers': self.property_mapping.get('watch_providers_property_id'),
+            'season_episodes': self.property_mapping.get('season_episodes_property_id'),
+            'latest_episode': self.property_mapping.get('latest_episode_display_property_id'),
+            'my_season': self.property_mapping.get('my_season_property_id'),
+            'my_episode': self.property_mapping.get('my_episode_property_id'),
         }
         
         # Get property IDs for the specified update_only fields

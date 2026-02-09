@@ -8,7 +8,8 @@ A unified Python application that synchronizes media data from multiple sources 
 - **Automatic Data Sync**: Keeps your Notion databases updated with latest information
 - **Rich Metadata**: Includes genres, ratings, release dates, cast/artists, and more
 - **Cover Images**: Automatically updates page covers with artwork
-- **URL Creation**: Create new pages directly from Spotify or Google Books URLs
+- **URL Creation**: Create new pages directly from Spotify, Google Books, or TMDB URLs
+- **Season/Episode Tracking**: Per-season episode counts and personal progress tracking for TV shows
 - **Efficient Updates**: Only updates changed data to minimize API calls
 - **Cloud Ready**: Easy deployment to GitHub Actions
 
@@ -172,6 +173,40 @@ This works everywhere page IDs are accepted:
 - GitHub Actions workflow inputs
 - Make.com webhook calls
 - iOS shortcuts
+
+### Season/Episode Tracking for TV Shows
+
+Track your TV show viewing progress with season-aware episode counts. The system automatically stores per-season episode information and displays the latest aired episode in human-readable format.
+
+**Auto-Populated Properties:**
+- **Season/Episode JSON**: Stores episode counts for each season as JSON (e.g., `{"1": 8, "2": 8}`)
+- **Latest Episode**: Shows the most recently aired episode in "S3E5" format
+
+**User-Managed Properties:**
+- **My Season**: Which season you're currently watching (you update this manually)
+- **My Last Episode**: Which episode you're on in that season (you update this manually)
+
+**Example Workflow:**
+
+For a show like "Fallout" (2 seasons, 8 episodes each):
+1. Sync populates: `Season/Episode JSON: {"1": 8, "2": 8}` and `Latest Episode: S2E8`
+2. You set: `My Season: 1` and `My Last Episode: 5`
+3. You can see you're 5/8 through Season 1
+
+When you finish Season 1:
+1. You update: `My Season: 2` and `My Last Episode: 1`
+2. You know you're 1/8 through Season 2
+
+**Setup:**
+1. Add these properties to your Movies/TV database in Notion:
+   - "Season/Episode JSON" (Text)
+   - "Latest Episode" (Text) - optional
+   - "My Season" (Number)
+   - "My Last Episode" (Number)
+2. Run `python3 find_property_ids.py` and add the IDs to `syncs/movies/property_config.py`
+3. Run a sync to populate the data
+
+The Season/Episode JSON provides the reference data you need to understand your progress within each season naturally.
 
 ## 📋 Setup Guide
 
