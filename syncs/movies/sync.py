@@ -17,6 +17,7 @@ import requests
 from notion_client import Client
 
 from shared.logging_config import get_logger, setup_logging
+from shared.notion_api import NotionAPI
 from shared.utils import build_multi_select_options, build_created_after_filter, get_database_id, get_notion_token, normalize_id
 
 setup_logging('notion_tmdb_sync.log')
@@ -35,7 +36,7 @@ try:
         ORIGINAL_LANGUAGE_PROPERTY_ID, PRODUCTION_COUNTRIES_PROPERTY_ID,
         TAGLINE_PROPERTY_ID, POPULARITY_PROPERTY_ID, RUNTIME_MINUTES_PROPERTY_ID,
         ADULT_CONTENT_PROPERTY_ID, WATCH_PROVIDERS_PROPERTY_ID, RELEASED_EPISODES_PROPERTY_ID, NEXT_EPISODE_PROPERTY_ID,
-        COLLECTION_PROPERTY_ID, FIELD_BEHAVIOR
+        COLLECTION_PROPERTY_ID, DNS_PROPERTY_ID, FIELD_BEHAVIOR
     )
 except ImportError:
     logger.error("property_config.py not found. Please create this file with your property IDs.")
@@ -210,114 +211,6 @@ class TMDbAPI:
         return normalized
     
 
-class NotionAPI:
-    """Notion API client for database operations."""
-    
-    def __init__(self, token: str):
-        self.client = Client(auth=token)
-    
-    def get_database(self, database_id: str) -> Optional[Dict]:
-        """Get database information."""
-        try:
-            return self.client.databases.retrieve(database_id)
-        except Exception as e:
-            logger.error(f"Error retrieving database {database_id}: {e}")
-            return None
-    
-    def query_database(self, database_id: str, filter_params: Optional[Dict] = None) -> List[Dict]:
-        """Query database for pages."""
-        try:
-            pages = []
-            has_more = True
-            start_cursor = None
-            
-            while has_more:
-                params = {}
-                if start_cursor:
-                    params['start_cursor'] = start_cursor
-                if filter_params:
-                    params['filter'] = filter_params
-                
-                response = self.client.databases.query(database_id, **params)
-                pages.extend(response['results'])
-                has_more = response['has_more']
-                start_cursor = response.get('next_cursor')
-            
-            return pages
-        except Exception as e:
-            logger.error(f"Error querying database {database_id}: {e}")
-            return []
-    
-    def get_page(self, page_id: str) -> Optional[Dict]:
-        """Get a single page by ID."""
-        try:
-            return self.client.pages.retrieve(page_id)
-        except Exception as e:
-            logger.error(f"Error retrieving page {page_id}: {e}")
-            return None
-    
-    def update_page(self, page_id: str, properties: Dict, cover_url: Optional[str] = None, icon: Optional[Union[str, Dict]] = None) -> bool:
-        """Update a page with new properties and optionally set the cover image and icon."""
-        try:
-            update_data = {'properties': properties}
-            
-            # Set cover image if provided
-            if cover_url:
-                update_data['cover'] = {
-                    'type': 'external',
-                    'external': {
-                        'url': cover_url
-                    }
-                }
-            
-            # Set page icon if provided
-            if icon:
-                if isinstance(icon, str):
-                    # Emoji icon
-                    update_data['icon'] = {
-                        'type': 'emoji',
-                        'emoji': icon
-                    }
-                elif isinstance(icon, dict):
-                    # External image icon
-                    update_data['icon'] = icon
-            
-            self.client.pages.update(page_id, **update_data)
-            return True
-        except Exception as e:
-            logger.error(f"Error updating page {page_id}: {e}")
-            return False
-    
-    def create_page(self, database_id: str, properties: Dict, cover_url: Optional[str] = None, icon: Optional[str] = None) -> Optional[str]:
-        """Create a new page in a database."""
-        try:
-            page_data = {
-                'parent': {'database_id': database_id},
-                'properties': properties
-            }
-            
-            # Set cover image if provided
-            if cover_url:
-                page_data['cover'] = {
-                    'type': 'external',
-                    'external': {
-                        'url': cover_url
-                    }
-                }
-            
-            # Set page icon if provided
-            if icon:
-                page_data['icon'] = {
-                    'type': 'emoji',
-                    'emoji': icon
-                }
-            
-            response = self.client.pages.create(**page_data)
-            return response['id']
-        except Exception as e:
-            logger.error(f"Error creating page: {e}")
-            return None
-
 class NotionTMDbSync:
     """Main class for synchronizing Notion database with TMDb data."""
     
@@ -393,6 +286,7 @@ class NotionTMDbSync:
                 'released_episodes_property_id': RELEASED_EPISODES_PROPERTY_ID,
                 'next_episode_property_id': NEXT_EPISODE_PROPERTY_ID,
                 'collection_property_id': COLLECTION_PROPERTY_ID,
+                'dns_property_id': DNS_PROPERTY_ID,
             }
             
             # Log the property mapping (no validation needed - trust the config)
@@ -1447,7 +1341,8 @@ class NotionTMDbSync:
                 }
             
             # Format properties for initial page creation
-            properties = self._format_extended_properties({}, details, 'movie', [])
+            properties = {}
+            self._format_extended_properties(details, 'movie', properties)
             
             # Create the page with DNS=True to prevent automation cascade
             title = details.get('title', 'Untitled Movie')
@@ -1507,7 +1402,8 @@ class NotionTMDbSync:
                 }
             
             # Format properties for initial page creation
-            properties = self._format_extended_properties({}, details, 'tv', [])
+            properties = {}
+            self._format_extended_properties(details, 'tv', properties)
             
             # Create the page with DNS=True to prevent automation cascade
             title = details.get('name', 'Untitled TV Show')

@@ -37,6 +37,7 @@ WATCH_PROVIDERS_PROPERTY_ID = "wQIc"  # Where to watch (multi-select)
 RELEASED_EPISODES_PROPERTY_ID = "v%3F%7Ci"  # Last released episode number (number)
 NEXT_EPISODE_PROPERTY_ID = "Szt%5B"  # Next episode air date (date)
 COLLECTION_PROPERTY_ID = "TW%5DE"  # Collection (multi-select)
+DNS_PROPERTY_ID = "IvfA"  # DNS (Doesn't Need Sync) checkbox
 
 # Field Behavior Configuration
 # Controls how each field is handled during sync
