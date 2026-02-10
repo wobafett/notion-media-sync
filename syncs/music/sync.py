@@ -909,32 +909,17 @@ class MusicBrainzAPI:
         """Get artist image URL from Spotify API."""
         try:
             if not artist_name:
-                # #region agent log
-                import json, time
-                with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
-                    f.write(json.dumps({"id": f"log_{int(time.time()*1000)}_4", "timestamp": int(time.time()*1000), "location": "sync.py:911", "message": "No artist name provided", "data": {"mbid": artist_mbid}, "runId": "initial", "hypothesisId": "B"}) + '\n')
-                # #endregion
                 return None
             
             if not artist_data and artist_mbid:
                 artist_data = self.get_artist(artist_mbid)
             
             spotify_artist_id = self._extract_spotify_artist_id(artist_data)
-            # #region agent log
-            import json, time
-            with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({"id": f"log_{int(time.time()*1000)}_5", "timestamp": int(time.time()*1000), "location": "sync.py:917", "message": "Extracted Spotify artist ID", "data": {"artist_name": artist_name, "spotify_artist_id": spotify_artist_id, "has_artist_data": bool(artist_data), "num_relations": len(artist_data.get('relations', [])) if artist_data else 0}, "runId": "initial", "hypothesisId": "B"}) + '\n')
-            # #endregion
             if not spotify_artist_id:
                 logger.info(f"No Spotify relation found for {artist_name}; cannot fetch Spotify image")
                 return None
             
             spotify_image = self._get_spotify_artist_image(artist_name, artist_mbid, spotify_artist_id)
-            # #region agent log
-            import json, time
-            with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({"id": f"log_{int(time.time()*1000)}_6", "timestamp": int(time.time()*1000), "location": "sync.py:922", "message": "Fetched Spotify image", "data": {"artist_name": artist_name, "has_image": bool(spotify_image), "image_url": spotify_image if spotify_image else None}, "runId": "initial", "hypothesisId": "D"}) + '\n')
-            # #endregion
             if spotify_image:
                 logger.info(f"Found Spotify image for {artist_name} via relation ID {spotify_artist_id}")
                 return spotify_image
@@ -942,11 +927,6 @@ class MusicBrainzAPI:
             return None
             
         except Exception as e:
-            # #region agent log
-            import json, time
-            with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({"id": f"log_{int(time.time()*1000)}_7", "timestamp": int(time.time()*1000), "location": "sync.py:930", "message": "Exception in get_artist_image_url", "data": {"artist_name": artist_name, "mbid": artist_mbid, "error": str(e)}, "runId": "initial", "hypothesisId": "D"}) + '\n')
-            # #endregion
             logger.debug(f"No artist image found for {artist_mbid}: {e}")
             return None
     
@@ -1635,15 +1615,6 @@ class NotionMusicBrainzSync:
                     logger.warning(f"Could not find artist with MBID {existing_mbid}, searching by name")
                     existing_mbid = None
                 elif not force_update:
-                    # #region agent log
-                    import json, time
-                    has_cover = bool(page.get('cover'))
-                    cover_type = page.get('cover', {}).get('type') if page.get('cover') else None
-                    spotify_artist_id = self.mb._extract_spotify_artist_id(artist_data) if artist_data else None
-                    num_relations = len(artist_data.get('relations', [])) if artist_data else 0
-                    with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
-                        f.write(json.dumps({"id": f"log_{int(time.time()*1000)}_1", "timestamp": int(time.time()*1000), "location": "sync.py:1617", "message": "Skipping artist with MBID", "data": {"title": title, "mbid": existing_mbid, "has_cover": has_cover, "cover_type": cover_type, "spotify_artist_id": spotify_artist_id, "num_relations": num_relations}, "runId": "initial", "hypothesisId": "A,B,C"}) + '\n')
-                    # #endregion
                     # Skip pages with existing MBIDs unless force_update is True
                     logger.info(f"Skipping artist '{title}' - already has MBID {existing_mbid} (use --force-update to update)")
                     return None
@@ -1688,17 +1659,7 @@ class NotionMusicBrainzSync:
             artist_image_url = None
             if artist_data.get('id'):
                 artist_name = artist_data.get('name')
-                # #region agent log
-                import json, time
-                with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
-                    f.write(json.dumps({"id": f"log_{int(time.time()*1000)}_2", "timestamp": int(time.time()*1000), "location": "sync.py:1662", "message": "Attempting to fetch artist image", "data": {"title": title, "artist_name": artist_name, "mbid": artist_data.get('id')}, "runId": "initial", "hypothesisId": "B,D"}) + '\n')
-                # #endregion
                 artist_image_url = self.mb.get_artist_image_url(artist_data['id'], artist_name, artist_data)
-                # #region agent log
-                import json, time
-                with open('/Users/chris.auzenne/Documents/Cursor Projects/Notion Sync Merge/.cursor/debug.log', 'a') as f:
-                    f.write(json.dumps({"id": f"log_{int(time.time()*1000)}_3", "timestamp": int(time.time()*1000), "location": "sync.py:1667", "message": "Artist image fetch result", "data": {"title": title, "has_image": bool(artist_image_url), "image_url_preview": artist_image_url[:50] if artist_image_url else None}, "runId": "initial", "hypothesisId": "B,D"}) + '\n')
-                # #endregion
                 if artist_image_url:
                     logger.info(f"Found artist image for {title} from Spotify: {artist_image_url[:50]}...")
                 else:
