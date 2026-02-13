@@ -1865,6 +1865,28 @@ class NotionGoogleBooksSync:
         logger.warning(f"Unable to parse Google Books URL: {url}")
         return None
     
+    def _parse_mal_url(self, url: str) -> Optional[int]:
+        """
+        Parse MyAnimeList URL and extract MAL ID.
+        
+        Supports formats:
+        - https://myanimelist.net/manga/104/Yotsuba_to
+        - https://myanimelist.net/manga/104
+        
+        Returns: mal_id (int) or None
+        """
+        if not url:
+            return None
+        
+        # Pattern for /manga/{mal_id}/ or /manga/{mal_id}
+        mal_pattern = r'/manga/(\d+)'
+        mal_match = re.search(mal_pattern, url)
+        if mal_match:
+            return int(mal_match.group(1))
+        
+        logger.warning(f"Unable to parse MyAnimeList URL: {url}")
+        return None
+    
     def create_from_google_books_url(self, google_books_url: str) -> Dict:
         """
         Create a new Notion page from a Google Books URL.
@@ -2012,9 +2034,176 @@ class NotionGoogleBooksSync:
             'created': True
         }
     
-    def run_sync(self, force_icons: bool = False, force_update: bool = False, max_workers: int = 3, dry_run: bool = False, google_books_url: Optional[str] = None, created_after: Optional[str] = None) -> Dict:
+    def create_from_mal_url(self, mal_url: str) -> Dict:
+        """
+        Create a new Notion page from a MyAnimeList URL.
+        
+        Args:
+            mal_url: MyAnimeList URL
+        
+        Returns:
+            Dict with keys: success, message, page_id, created
+        """
+        logger.info(f"Creating page from MyAnimeList URL: {mal_url}")
+        
+        # Parse URL to extract MAL ID
+        mal_id = self._parse_mal_url(mal_url)
+        if not mal_id:
+            return {
+                'success': False,
+                'message': f'Invalid MyAnimeList URL format: {mal_url}'
+            }
+        
+        logger.info(f"Extracted MAL ID: {mal_id}")
+        
+        # Fetch manga data from Jikan API
+        jikan_data = self.google_books.jikan.get_manga_details(mal_id)
+        if not jikan_data:
+            return {
+                'success': False,
+                'message': f'Could not fetch manga data for MAL ID: {mal_id}'
+            }
+        
+        manga_title = jikan_data.get('title', '')
+        
+        if not manga_title:
+            return {
+                'success': False,
+                'message': f'No title found in Jikan data for MAL ID: {mal_id}'
+            }
+        
+        logger.info(f"Found manga: {manga_title}")
+        
+        # Check for duplicates by Jikan ID (MAL ID)
+        jikan_id_prop_id = self.property_mapping.get('jikan_id_property_id')
+        if jikan_id_prop_id:
+            jikan_id_prop_key = self._get_property_key(jikan_id_prop_id)
+            if jikan_id_prop_key:
+                existing_page_id = find_page_by_property(
+                    self.notion,
+                    self.database_id,
+                    jikan_id_prop_key,
+                    'rich_text',
+                    str(mal_id)
+                )
+                
+                if existing_page_id:
+                    # Validate that the existing page's title matches
+                    page = self.notion.get_page(existing_page_id)
+                    if page:
+                        title_prop_id = self.property_mapping.get('title_property_id')
+                        title_key = self._get_property_key(title_prop_id)
+                        if title_key:
+                            existing_page_title_prop = page.get('properties', {}).get(title_key, {})
+                            if existing_page_title_prop.get('title') and existing_page_title_prop['title']:
+                                existing_title = existing_page_title_prop['title'][0]['plain_text']
+                                # Check if titles match (case-insensitive)
+                                if existing_title.lower() == manga_title.lower():
+                                    logger.info(f"Manga already exists in Notion: {existing_page_id}")
+                                    # Update the existing page
+                                    self.sync_page(page, force_update=True)
+                                    
+                                    # Explicitly set MAL URL
+                                    url_prop_id = self.property_mapping.get('google_books_url_property_id')
+                                    if url_prop_id:
+                                        url_key = self._get_property_key(url_prop_id)
+                                        if url_key:
+                                            self.notion.update_page(existing_page_id, {url_key: {'url': mal_url}})
+                                    
+                                    return {
+                                        'success': True,
+                                        'message': f'Updated existing manga: {manga_title}',
+                                        'page_id': existing_page_id,
+                                        'created': False
+                                    }
+                                else:
+                                    # Titles don't match - bad data
+                                    logger.warning(f"MAL ID {mal_id} has title '{existing_title}' but requested title is '{manga_title}'. Ignoring bad MAL ID and creating new page.")
+        
+        # Create manga data structure from Jikan data
+        book_data = self.google_books._create_manga_data_from_jikan(jikan_data)
+        
+        # Create new page with full metadata
+        properties = self.format_notion_properties(book_data)
+        
+        # Add title (format_notion_properties skips it for updates, but we need it for creation)
+        title_prop_id = self.property_mapping.get('title_property_id')
+        if title_prop_id and manga_title:
+            title_key = self._get_property_key(title_prop_id)
+            if title_key:
+                properties[title_key] = {
+                    'title': [{'text': {'content': manga_title}}]
+                }
+        
+        # Add Jikan ID (MAL ID)
+        if jikan_id_prop_id:
+            jikan_id_prop_key = self._get_property_key(jikan_id_prop_id)
+            if jikan_id_prop_key:
+                properties[jikan_id_prop_key] = {
+                    'rich_text': [{'text': {'content': str(mal_id)}}]
+                }
+        
+        # Set Type to "Manga"
+        type_prop_id = self.property_mapping.get('type_property_id')
+        if type_prop_id:
+            type_key = self._get_property_key(type_prop_id)
+            if type_key:
+                properties[type_key] = {'select': {'name': 'Manga'}}
+        
+        # Set DNS checkbox to prevent automation cascade
+        dns_prop_id = self.property_mapping.get('dns_property_id')
+        if dns_prop_id:
+            dns_key = self._get_property_key(dns_prop_id)
+            if dns_key:
+                properties[dns_key] = {'checkbox': True}
+                logger.info("Setting DNS checkbox to prevent automation cascade")
+        
+        # Get cover image URL
+        cover_url = None
+        jikan_images = book_data.get('volumeInfo', {}).get('jikan_images', {})
+        if jikan_images:
+            # Try to get the best quality image
+            if 'jpg' in jikan_images and 'large_image_url' in jikan_images['jpg']:
+                cover_url = jikan_images['jpg']['large_image_url']
+            elif 'jpg' in jikan_images and 'image_url' in jikan_images['jpg']:
+                cover_url = jikan_images['jpg']['image_url']
+        
+        # Set icon (manga emoji)
+        icon = '📖'
+        
+        # Create the page
+        page_id = self.notion.create_page(self.database_id, properties, cover_url, icon)
+        
+        if not page_id:
+            return {
+                'success': False,
+                'message': f'Failed to create Notion page for: {manga_title}'
+            }
+        
+        logger.info(f"Successfully created page: {page_id}")
+        
+        # Explicitly set MAL URL (separate update call)
+        url_prop_id = self.property_mapping.get('google_books_url_property_id')
+        if url_prop_id:
+            url_key = self._get_property_key(url_prop_id)
+            if url_key:
+                self.notion.update_page(page_id, {url_key: {'url': mal_url}})
+                logger.info(f"Set MyAnimeList URL: {mal_url}")
+        
+        return {
+            'success': True,
+            'message': f'Created manga page: {manga_title}',
+            'page_id': page_id,
+            'created': True
+        }
+    
+    def run_sync(self, force_icons: bool = False, force_update: bool = False, max_workers: int = 3, dry_run: bool = False, google_books_url: Optional[str] = None, mal_url: Optional[str] = None, created_after: Optional[str] = None) -> Dict:
         """Run the complete synchronization process."""
-        # Google Books URL creation mode takes precedence
+        # MAL URL creation mode takes precedence
+        if mal_url:
+            return self.create_from_mal_url(mal_url)
+        
+        # Google Books URL creation mode
         if google_books_url:
             return self.create_from_google_books_url(google_books_url)
         
@@ -2217,10 +2406,16 @@ def run_sync(
     comicvine_scrape: bool = False,
     dry_run: bool = False,
     google_books_url: Optional[str] = None,
+    mal_url: Optional[str] = None,
     created_after: Optional[str] = None,
 ) -> Dict:
     """Run the Books sync with the provided options."""
-    # Google Books URL creation mode takes precedence
+    # MAL URL creation mode takes precedence
+    if mal_url and not page_id:
+        sync = _build_sync_instance(comicvine_scrape=comicvine_scrape)
+        return sync.create_from_mal_url(mal_url)
+    
+    # Google Books URL creation mode
     if google_books_url and not page_id:
         sync = _build_sync_instance(comicvine_scrape=comicvine_scrape)
         return sync.create_from_google_books_url(google_books_url)
