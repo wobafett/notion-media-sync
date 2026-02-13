@@ -2166,7 +2166,7 @@ class NotionGoogleBooksSync:
                 cover_url = jikan_images['jpg']['image_url']
         
         # Set icon (manga emoji)
-        icon = '📖'
+        icon = '🗯️'
         
         # Create the page
         page_id = self.notion.create_page(self.database_id, properties, cover_url, icon)
