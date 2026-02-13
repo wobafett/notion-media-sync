@@ -1055,8 +1055,9 @@ class NotionGoogleBooksSync:
             logger.info(f"Processing: {title}")
             
             # Check DNS checkbox - skip if checked (prevents automation cascade)
+            # Allow force_update to override DNS check
             dns_prop_id = self.property_mapping.get('dns_property_id')
-            if dns_prop_id:
+            if dns_prop_id and not force_update:
                 dns_key = self._get_property_key(dns_prop_id)
                 if dns_key:
                     dns_prop = page.get('properties', {}).get(dns_key, {})
