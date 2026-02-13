@@ -1639,21 +1639,18 @@ class NotionGoogleBooksSync:
             # Categories - use appropriate source based on data origin
             all_categories = []
             
-            # Only add Google Books categories if we're NOT using Jikan/ComicVine data
-            if (volume_info.get('categories') and 
-                not volume_info.get('jikan_data') and 
-                not volume_info.get('comicvine_data')):
-                for category_string in volume_info['categories']:
-                    # Split by " / " to separate individual categories
-                    individual_categories = [cat.strip() for cat in category_string.split(' / ')]
-                    all_categories.extend(individual_categories)
-            
-            # Add Jikan genres for manga (demographics are handled separately for maturity rating)
-            jikan_data = volume_info.get('jikan_data', {})
-            if jikan_data.get('genres'):
-                for genre in jikan_data['genres']:
-                    if genre.get('name'):
-                        all_categories.append(genre['name'])
+            # Process categories based on source format
+            if volume_info.get('categories'):
+                # Google Books format - categories may contain " / " separators
+                # Jikan/ComicVine format - categories are already individual items
+                if not volume_info.get('jikan_data') and not volume_info.get('comicvine_data'):
+                    # Google Books format - split by " / " to separate individual categories
+                    for category_string in volume_info['categories']:
+                        individual_categories = [cat.strip() for cat in category_string.split(' / ')]
+                        all_categories.extend(individual_categories)
+                else:
+                    # Jikan/ComicVine format - already individual items, use directly
+                    all_categories.extend(volume_info['categories'])
             
             # Add ComicVine themes for comics (scraped from website)
             comicvine_data = volume_info.get('comicvine_data', {})
