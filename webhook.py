@@ -18,7 +18,7 @@ logger = get_logger(__name__)
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Route a single Notion page to the correct sync target")
     parser.add_argument("--page-id", required=False, help="Notion page ID or URL to sync (optional if --url is provided)")
-    parser.add_argument("--url", type=str, help="External URL to create new page from (Spotify, Google Books, TMDB, or MyAnimeList) - auto-detects type")
+    parser.add_argument("--url", type=str, help="External URL to create new page from (Spotify, Google Books, TMDB, MyAnimeList, or IGDB) - auto-detects type")
     parser.add_argument("--force-icons", action="store_true", help="Force update page icons if supported")
     parser.add_argument("--force-update", action="store_true", help="Force update even if already synced")
     parser.add_argument("--comicvine-scrape", action="store_true", help="Books target: force ComicVine scraping")
@@ -27,6 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--google-books-url", type=str, help="(Deprecated: use --url) Books target: Google Books URL to create new page")
     parser.add_argument("--tmdb-url", type=str, help="(Deprecated: use --url) Movies target: TMDB URL to create new page")
     parser.add_argument("--mal-url", type=str, help="(Deprecated: use --url) Books target: MyAnimeList URL to create new manga page")
+    parser.add_argument("--igdb-url", type=str, help="(Deprecated: use --url) Games target: IGDB URL to create new game page")
     return parser
 
 
@@ -42,7 +43,7 @@ def main():
     if args.url:
         url_type = detect_url_type(args.url)
         if not url_type:
-            logger.error("Unsupported URL type: %s. Must be Spotify, Google Books, TMDB, or MyAnimeList URL", args.url)
+            logger.error("Unsupported URL type: %s. Must be Spotify, Google Books, TMDB, MyAnimeList, or IGDB URL", args.url)
             sys.exit(1)
         
         # Map to appropriate parameter for backward compatibility
@@ -58,9 +59,12 @@ def main():
         elif url_type == 'myanimelist':
             args.mal_url = args.url
             logger.info("Detected MyAnimeList URL: %s", args.url)
+        elif url_type == 'igdb':
+            args.igdb_url = args.url
+            logger.info("Detected IGDB URL: %s", args.url)
 
-    # Validation: require either page_id, spotify_url, google_books_url, tmdb_url, mal_url, or url
-    if not args.page_id and not args.spotify_url and not args.google_books_url and not args.tmdb_url and not args.mal_url:
+    # Validation: require either page_id, spotify_url, google_books_url, tmdb_url, mal_url, igdb_url, or url
+    if not args.page_id and not args.spotify_url and not args.google_books_url and not args.tmdb_url and not args.mal_url and not args.igdb_url:
         logger.error("Either --page-id or --url must be provided")
         sys.exit(1)
 
@@ -179,6 +183,33 @@ def main():
         logger.error("Failed to create manga page from MyAnimeList URL: %s", result.get("message", "Unknown error"))
         sys.exit(1)
 
+    # IGDB URL-only mode: create new game page from URL
+    if args.igdb_url and not args.page_id:
+        logger.info("IGDB URL creation mode: %s", args.igdb_url)
+        target = router.get_target("games")
+        if not target:
+            logger.error("Games target not available")
+            sys.exit(1)
+        
+        if not target.validate_environment():
+            sys.exit(1)
+        
+        try:
+            result = target.run_sync(igdb_url=args.igdb_url)
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error("IGDB URL creation failed: %s", exc)
+            raise
+        
+        if result.get("success"):
+            logger.info("Successfully created game page from IGDB URL")
+            logger.info("Page ID: %s | Created: %s",
+                        result.get("page_id", "unknown"),
+                        result.get("created", False))
+            sys.exit(0)
+        
+        logger.error("Failed to create game page from IGDB URL: %s", result.get("message", "Unknown error"))
+        sys.exit(1)
+
     # Standard page-specific mode
     notion = NotionAPI(notion_token)
     
@@ -214,6 +245,7 @@ def main():
         "google_books_url": args.google_books_url,
         "tmdb_url": args.tmdb_url,
         "mal_url": args.mal_url,
+        "igdb_url": args.igdb_url,
     }
 
     # Remove None values so adapters don't see extraneous kwargs

@@ -177,7 +177,7 @@ def find_page_by_property(
 
 def detect_url_type(url: str) -> Optional[str]:
     """
-    Detect URL type and return 'spotify', 'google_books', 'tmdb', or 'myanimelist'.
+    Detect URL type and return 'spotify', 'google_books', 'tmdb', 'myanimelist', or 'igdb'.
     
     Args:
         url: URL to analyze
@@ -187,6 +187,7 @@ def detect_url_type(url: str) -> Optional[str]:
         'google_books' for Google Books edition URLs
         'tmdb' for TMDB URLs (movie/tv)
         'myanimelist' for MyAnimeList URLs (manga)
+        'igdb' for IGDB URLs (games)
         None if URL is not recognized
     
     Example:
@@ -198,6 +199,8 @@ def detect_url_type(url: str) -> Optional[str]:
         'tmdb'
         >>> detect_url_type('https://myanimelist.net/manga/104/Yotsuba_to')
         'myanimelist'
+        >>> detect_url_type('https://www.igdb.com/games/stray')
+        'igdb'
     """
     if not url:
         return None
@@ -212,6 +215,8 @@ def detect_url_type(url: str) -> Optional[str]:
         return 'tmdb'
     elif 'myanimelist.net/manga/' in url:
         return 'myanimelist'
+    elif 'igdb.com/games/' in url:
+        return 'igdb'
     
     return None
 

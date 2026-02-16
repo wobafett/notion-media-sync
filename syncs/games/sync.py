@@ -231,6 +231,35 @@ class IGDbAPI:
             logger.error(f"Error searching for game '{title}': {e}")
             return None
     
+    def search_by_slug(self, slug: str) -> Optional[Dict]:
+        """Search for a game by exact slug match."""
+        try:
+            self._ensure_valid_token()
+            self._rate_limit()
+            
+            # Query by exact slug
+            query = f"""
+            fields id,name,summary,first_release_date,aggregated_rating,rating_count,
+                   genres,platforms,game_status,cover,franchises,collections,game_modes,
+                   category,multiplayer_modes,themes,url,involved_companies;
+            where slug = "{slug}";
+            limit 1;
+            """
+            
+            response = self._make_api_request(f"{self.base_url}/games", query)
+            results = response.json()
+            
+            if results and len(results) > 0:
+                logger.info(f"Found game by slug '{slug}': {results[0]['name']} (ID: {results[0]['id']})")
+                return results[0]
+            
+            logger.warning(f"No game found with slug: {slug}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error searching for game by slug '{slug}': {e}")
+            return None
+    
     def _search_games_exact(self, title: str) -> Optional[Dict]:
         """Search for games with exact title matching."""
         search_query = f"""
@@ -1066,6 +1095,29 @@ class NotionIGDbSync:
         logger.info(f"Fetching pages from database {self.database_id}")
         return self.notion.query_database(self.database_id, filter_params)
     
+    def _parse_igdb_url(self, url: str) -> Optional[str]:
+        """
+        Parse IGDB URL and extract slug.
+        
+        Supports formats:
+        - https://www.igdb.com/games/stray
+        - https://www.igdb.com/games/the-last-of-us-part-ii
+        
+        Returns: slug or None
+        """
+        if not url:
+            return None
+        
+        # Pattern for /games/{slug}
+        import re
+        igdb_pattern = r'/games/([a-z0-9-]+)'
+        igdb_match = re.search(igdb_pattern, url)
+        if igdb_match:
+            return igdb_match.group(1)
+        
+        logger.warning(f"Unable to parse IGDB URL: {url}")
+        return None
+    
     def extract_title(self, page: Dict) -> Optional[str]:
         """Extract title from a Notion page."""
         try:
@@ -1675,8 +1727,117 @@ class NotionIGDbSync:
         logger.info(f"Finished page-specific sync for page {page_id}")
         return results
     
-    def run_sync(self, force_icons: bool = False, force_update: bool = False, max_workers: int = 3, last_page: bool = False, page_id: Optional[str] = None, created_after: Optional[str] = None, dry_run: bool = False) -> Dict:
+    def create_from_igdb_url(self, igdb_url: str) -> Dict:
+        """
+        Create a new Notion page from an IGDB URL.
+        
+        Args:
+            igdb_url: IGDB URL for a game
+            
+        Returns:
+            Dict with keys: success, message, page_id, created
+        """
+        logger.info(f"Creating page from IGDB URL: {igdb_url}")
+        
+        # Parse URL to extract slug
+        slug = self._parse_igdb_url(igdb_url)
+        if not slug:
+            return {
+                'success': False,
+                'message': f'Invalid IGDB URL format: {igdb_url}'
+            }
+        
+        logger.info(f"Extracted slug: {slug}")
+        
+        # Search IGDB by slug
+        game_data = self.igdb.search_by_slug(slug)
+        if not game_data:
+            return {
+                'success': False,
+                'message': f'Could not find game with slug: {slug}'
+            }
+        
+        game_title = game_data.get('name', '')
+        igdb_id = game_data.get('id')
+        
+        if not game_title or not igdb_id:
+            return {
+                'success': False,
+                'message': f'Incomplete game data from IGDB for slug: {slug}'
+            }
+        
+        logger.info(f"Found game: {game_title} (IGDB ID: {igdb_id})")
+        
+        # Check for duplicates by IGDB ID
+        igdb_id_prop_id = self.property_mapping.get('igdb_id_property_id')
+        if igdb_id_prop_id:
+            igdb_id_prop_key = self._get_property_key(igdb_id_prop_id)
+            if igdb_id_prop_key:
+                # Query database for existing page with this IGDB ID
+                filter_params = {
+                    'property': igdb_id_prop_key,
+                    'number': {'equals': igdb_id}
+                }
+                existing_pages = self.notion.query_database(self.database_id, filter_params)
+                
+                if existing_pages:
+                    existing_page_id = existing_pages[0]['id']
+                    logger.info(f"Game already exists in Notion: {existing_page_id}")
+                    return {
+                        'success': True,
+                        'message': f'Game already exists: {game_title}',
+                        'page_id': existing_page_id,
+                        'created': False
+                    }
+        
+        # Get full game details
+        detailed_game_data = self.igdb.get_game_details(igdb_id)
+        if detailed_game_data:
+            game_data = detailed_game_data
+        
+        # Format properties for Notion
+        properties = self.format_all_properties(game_data)
+        
+        # Add title
+        title_prop_id = self.property_mapping.get('title_property_id')
+        if title_prop_id and game_title:
+            title_key = self._get_property_key(title_prop_id)
+            if title_key:
+                properties[title_key] = {
+                    'title': [{'text': {'content': game_title}}]
+                }
+        
+        # Get cover URL
+        cover_url = self.igdb.get_cover_url(game_data)
+        
+        # Set icon (game controller emoji)
+        icon = '🎮'
+        
+        # Create the page
+        page_id = self.notion.create_page(self.database_id, properties, cover_url, icon)
+        
+        if not page_id:
+            return {
+                'success': False,
+                'message': f'Failed to create Notion page for: {game_title}'
+            }
+        
+        logger.info(f"Successfully created page: {page_id}")
+        
+        return {
+            'success': True,
+            'message': f'Created game page: {game_title}',
+            'page_id': page_id,
+            'created': True
+        }
+    
+    def run_sync(self, force_icons: bool = False, force_update: bool = False, max_workers: int = 3, last_page: bool = False, page_id: Optional[str] = None, created_after: Optional[str] = None, dry_run: bool = False, igdb_url: Optional[str] = None) -> Dict:
         """Run the complete synchronization process."""
+        # Handle IGDB URL-based creation
+        if igdb_url:
+            logger.info("IGDB URL provided - running URL-based creation")
+            return self.create_from_igdb_url(igdb_url)
+        
         if dry_run:
             logger.warning("dry_run parameter not yet fully implemented for games sync - proceeding with normal sync")
         # Handle page-specific sync
@@ -1830,6 +1991,7 @@ def run_sync(
     page_id: Optional[str] = None,
     created_after: Optional[str] = None,
     dry_run: bool = False,
+    igdb_url: Optional[str] = None,
 ) -> Dict:
     """Run the Games sync with the provided options."""
     enforce_worker_limits(workers)
@@ -1846,6 +2008,7 @@ def run_sync(
         page_id=page_id,
         created_after=created_after,
         dry_run=dry_run,
+        igdb_url=igdb_url,
     )
 
 
