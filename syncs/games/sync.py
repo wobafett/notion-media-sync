@@ -1439,7 +1439,6 @@ class NotionIGDbSync:
                     # No formal status - check release date to determine status
                     release_date = game_data.get('first_release_date')
                     if release_date:
-                        from datetime import datetime
                         current_time = datetime.now().timestamp()
                         if release_date > current_time:
                             status_value = 'Announced'
@@ -1624,11 +1623,10 @@ class NotionIGDbSync:
                             differences.append(f"{field_name} (content differs)")
                     elif notion_type == 'date':
                         notion_date = field_prop.get('date', {}).get('start', '')
-                        if notion_date:
-                            # Convert IGDb timestamp to date string for comparison
-                            from datetime import datetime
-                            igdb_date = datetime.fromtimestamp(igdb_value).strftime('%Y-%m-%d')
-                            if notion_date != igdb_date:
+                    if notion_date:
+                        # Convert IGDb timestamp to date string for comparison
+                        igdb_date = datetime.fromtimestamp(igdb_value).strftime('%Y-%m-%d')
+                        if notion_date != igdb_date:
                                 differences.append(f"{field_name} (date differs)")
                     elif notion_type == 'number':
                         notion_value = field_prop.get('number')
@@ -1808,7 +1806,10 @@ class NotionIGDbSync:
                 }
         
         # Get cover URL
-        cover_url = self.igdb.get_cover_url(game_data)
+        cover_id = game_data.get('cover')
+        cover_url = None
+        if cover_id:
+            cover_url = self.igdb.get_cover_url(cover_id)
         
         # Set icon (game controller emoji)
         icon = '🎮'
